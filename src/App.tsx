@@ -21,7 +21,6 @@ import Budget from './pages/admin/Budget';
 import Financing from './pages/admin/Financing';
 import StockAlerts from './pages/admin/StockAlerts';
 import Coupons from './pages/admin/Coupons';
-import Manufacturing from './pages/admin/Manufacturing';
 import Managers from './pages/admin/Managers';
 import Partners from './pages/admin/Partners';
 import Savings from './pages/admin/Savings';
@@ -189,7 +188,6 @@ function App() {
             <Route path="stock-alerts" element={<StockAlerts />} />
             <Route path="budget" element={<Budget />} />
             <Route path="settings" element={<Settings />} />
-            <Route path="manufacturing" element={<Manufacturing />} />
             <Route path="managers" element={<Managers />} />
             <Route path="partners" element={<Partners />} />
             <Route path="savings" element={<Savings />} />
