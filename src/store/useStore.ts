@@ -44,7 +44,8 @@ export interface Product {
   discount_price?: number; // سعر البيع بعد الخصم (قطاعي)
   wholesale_price?: number; // سعر الجملة
   half_wholesale_price?: number; // سعر نص الجملة
-  season?: string; // 'summer' / 'winter'
+  season?: string; // 'summer' / 'winter' (غير مستخدم في نسخة الباربر شوب)
+  type?: string; // 'product' (منتج له مخزون) | 'service' (خدمة بلا كمية ولا سعر شراء)
   stock_quantity: number;
   display_quantity?: number; // الكمية المعروضة في المحل (الباقي في المستودع)
   factory_quantity?: number; // كمية مخزن المصنع (غير متاحة للبيع حتى تُحوَّل)

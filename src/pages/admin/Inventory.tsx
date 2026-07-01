@@ -9,11 +9,16 @@ import jsPDF from 'jspdf';
 // html2canvas-pro يدعم ألوان oklch() في Tailwind v4 (النسخة الأصلية تفشل معها وتكسر تصدير PDF).
 import html2canvas from 'html2canvas-pro';
 
+// الخدمات لا نهائية الكمية: نخزّن لها مخزوناً كبيراً جداً حتى لا "تنفد" أبداً،
+// ونعرض "خدمة" بدل الرقم. هكذا يعمل منطق البيع/الخصم كما هو دون أي تعديل.
+const SERVICE_STOCK = 1_000_000;
+const isService = (p: any) => p?.type === 'service';
+
 export default function Inventory() {
   const { products, categories, storeSettings, addProduct, updateProduct, orders } = useStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [stockLocation, setStockLocation] = useState<'all' | 'warehouse' | 'display'>('all');
-  const [seasonFilter, setSeasonFilter] = useState<'all' | 'summer' | 'winter'>('all');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'product' | 'service'>('all');
   const [warehouseQty, setWarehouseQty] = useState(0); // كمية المستودع عند إضافة منتج جديد
   const [newCategoryName, setNewCategoryName] = useState('');
   const [showCatForm, setShowCatForm] = useState(false);
@@ -65,7 +70,7 @@ export default function Inventory() {
     discount_price: 0,
     wholesale_price: 0,
     half_wholesale_price: 0,
-    season: 'summer',
+    type: 'product',
     stock_quantity: 0,
     display_quantity: 0,
     category_id: categories[0]?.id || '',
@@ -97,15 +102,17 @@ export default function Inventory() {
     const matchesStock = showLowStock ? qtyOf(p) < 5 : true;
     const matchesHidden = showHidden ? p.is_hidden === true : !p.is_hidden; // showHidden=true → المخفيين فقط
     const matchesCategory = selectedCategory === 'all' || p.category_id === selectedCategory;
-    const matchesSeason = seasonFilter === 'all' || p.season === seasonFilter;
-    return matchesSearch && matchesStock && matchesHidden && matchesCategory && matchesSeason;
+    const pType = isService(p) ? 'service' : 'product';
+    const matchesType = typeFilter === 'all' || pType === typeFilter;
+    return matchesSearch && matchesStock && matchesHidden && matchesCategory && matchesType;
   }).sort((a, b) => new Date((b as any).created_at || 0).getTime() - new Date((a as any).created_at || 0).getTime());
   const hiddenCount = products.filter(p => p.is_hidden).length;
 
-  // الإحصائيات حسب الفلاتر المختارة (الموسم + التصنيف + المخزن).
-  const statsBase = products.filter(p => !p.is_hidden
+  // الإحصائيات حسب الفلاتر المختارة (النوع + التصنيف + المخزن).
+  // الخدمات تُستبعَد من إحصائيات المخزون لأنها بلا كمية ولا تكلفة.
+  const statsBase = products.filter(p => !p.is_hidden && !isService(p)
     && (selectedCategory === 'all' || p.category_id === selectedCategory)
-    && (seasonFilter === 'all' || p.season === seasonFilter));
+    && (typeFilter === 'all' || (isService(p) ? 'service' : 'product') === typeFilter));
   const totalStockValue = statsBase.reduce((acc, p) => acc + (qtyOf(p) * (p.average_purchase_price || p.purchase_price || 0)), 0);
   const lowStockCount = statsBase.filter(p => qtyOf(p) < 5).length;
   const totalItems = statsBase.reduce((acc, p) => acc + qtyOf(p), 0);
@@ -172,7 +179,7 @@ export default function Inventory() {
       discount_price: product.discount_price || 0,
       wholesale_price: product.wholesale_price || 0,
       half_wholesale_price: product.half_wholesale_price || 0,
-      season: product.season || 'summer',
+      type: (product as any).type || 'product',
       stock_quantity: product.stock_quantity,
       display_quantity: product.display_quantity || 0,
       category_id: product.category_id,
@@ -192,7 +199,7 @@ export default function Inventory() {
       discount_price: 0,
       wholesale_price: 0,
       half_wholesale_price: 0,
-      season: 'summer',
+      type: 'product',
       stock_quantity: 0,
       display_quantity: 0,
       category_id: categories[0]?.id || '',
@@ -222,18 +229,35 @@ export default function Inventory() {
       return;
     }
 
+    const serviceMode = formData.type === 'service';
     let payload = { ...formData, barcode };
+
+    // خدمة: بلا سعر شراء وبلا كمية — نعطيها مخزوناً كبيراً حتى لا تنفد أبداً.
+    if (serviceMode) {
+      payload = {
+        ...payload,
+        purchase_price: 0,
+        average_purchase_price: 0,
+        stock_quantity: SERVICE_STOCK,
+        display_quantity: SERVICE_STOCK,
+      };
+    }
+
     if (editingProductId) {
-      // المعروض لا يتجاوز الإجمالي
-      payload = { ...payload, display_quantity: Math.min(Number(formData.display_quantity) || 0, Number(formData.stock_quantity) || 0) };
+      if (!serviceMode) {
+        // المعروض لا يتجاوز الإجمالي
+        payload = { ...payload, display_quantity: Math.min(Number(formData.display_quantity) || 0, Number(formData.stock_quantity) || 0) };
+      }
       updateProduct(editingProductId, payload);
     } else {
-      // الإجمالي = مستودع + معروض، والمعروض يتسجّل كما هو
-      const display = Number(formData.display_quantity) || 0;
-      payload = { ...payload, stock_quantity: (Number(warehouseQty) || 0) + display, display_quantity: display };
+      if (!serviceMode) {
+        // الإجمالي = مستودع + معروض، والمعروض يتسجّل كما هو
+        const display = Number(formData.display_quantity) || 0;
+        payload = { ...payload, stock_quantity: (Number(warehouseQty) || 0) + display, display_quantity: display };
+      }
       addProduct(payload);
-      // طباعة ملصقات الباركود بعدد القطع المضافة على طابعة الباركود الحراري
-      if (payload.stock_quantity > 0) {
+      // طباعة ملصقات الباركود بعدد القطع المضافة (لا تُطبع للخدمات)
+      if (!serviceMode && payload.stock_quantity > 0) {
         printBarcodeLabels({
           name: payload.name,
           code: barcode,
@@ -257,7 +281,7 @@ export default function Inventory() {
       discount_price: 0,
       wholesale_price: 0,
       half_wholesale_price: 0,
-      season: 'summer',
+      type: 'product',
       stock_quantity: 0,
       display_quantity: 0,
       category_id: categories[0]?.id || '',
@@ -276,13 +300,13 @@ export default function Inventory() {
         p.barcode,
         p.name,
         categories.find(c => c.id === p.category_id)?.name || '',
-        getUnitConfig(p.unit).label,
-        p.purchase_price,
-        p.average_purchase_price,
+        isService(p) ? 'خدمة' : getUnitConfig(p.unit).label,
+        isService(p) ? 0 : p.purchase_price,
+        isService(p) ? 0 : p.average_purchase_price,
         p.sale_price,
-        qtyOf(p),
-        Math.max(0, (Number(p.stock_quantity) || 0) - dispOf(p)),
-        dispOf(p),
+        isService(p) ? 'خدمة' : qtyOf(p),
+        isService(p) ? '—' : Math.max(0, (Number(p.stock_quantity) || 0) - dispOf(p)),
+        isService(p) ? '—' : dispOf(p),
         soldMap.get(p.id) || 0
       ])
     ];
@@ -390,13 +414,13 @@ export default function Inventory() {
         </div>
       </div>
 
-      {/* فلاتر: الموسم + المخزن */}
+      {/* فلاتر: النوع + المخزن */}
       <div className="flex items-center gap-3 flex-wrap mb-2">
         <div className="flex items-center gap-2 bg-white rounded-2xl p-2 shadow-sm border border-slate-100 w-fit">
-          <span className="text-xs font-bold text-slate-500 px-2">الموسم:</span>
-          {([['all', 'الكل'], ['summer', 'صيفي'], ['winter', 'شتوي']] as const).map(([k, label]) => (
-            <button key={k} onClick={() => setSeasonFilter(k)}
-              className={`px-4 py-2 rounded-xl text-sm font-bold transition ${seasonFilter === k ? 'bg-amber-500 text-white shadow' : 'text-slate-600 hover:bg-slate-100'}`}>
+          <span className="text-xs font-bold text-slate-500 px-2">النوع:</span>
+          {([['all', 'الكل'], ['product', 'منتجات'], ['service', 'خدمات']] as const).map(([k, label]) => (
+            <button key={k} onClick={() => setTypeFilter(k)}
+              className={`px-4 py-2 rounded-xl text-sm font-bold transition ${typeFilter === k ? 'bg-amber-500 text-white shadow' : 'text-slate-600 hover:bg-slate-100'}`}>
               {label}
             </button>
           ))}
@@ -425,7 +449,21 @@ export default function Inventory() {
             <form onSubmit={submitProduct} className="p-6 space-y-4 overflow-y-auto">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="sm:col-span-2">
-                  <label className="block text-sm font-bold text-slate-700 mb-1">اسم المنتج <span className="text-red-500">*</span></label>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">النوع <span className="text-red-500">*</span></label>
+                  <div className="flex gap-2">
+                    {([['product','🛍️ منتج (له مخزون)'],['service','✂️ خدمة (بلا كمية)']] as const).map(([k,label]) => (
+                      <button type="button" key={k} onClick={() => setFormData({...formData, type: k})}
+                        className={`flex-1 py-2.5 rounded-xl font-bold text-sm transition border ${formData.type === k ? 'bg-indigo-600 text-white border-transparent' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'}`}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {formData.type === 'service' && (
+                    <p className="text-xs text-emerald-600 mt-1 font-bold">الخدمة بلا كمية (متاحة دائماً) وبلا سعر شراء — تُدخِل سعر تقديم الخدمة فقط.</p>
+                  )}
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-sm font-bold text-slate-700 mb-1">اسم {formData.type === 'service' ? 'الخدمة' : 'المنتج'} <span className="text-red-500">*</span></label>
                   <input type="text" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} style={{ '--tw-ring-color': storeSettings.themeColor + '40' } as any} className="w-full bg-slate-50 border border-slate-200 py-3 px-4 rounded-xl focus:ring-2 focus:outline-none" />
                 </div>
                 <div className="sm:col-span-2 relative group">
@@ -478,18 +516,7 @@ export default function Inventory() {
                   <label className="block text-sm font-bold text-slate-700 mb-1">سعر الجملة <span className="text-[10px] text-slate-400">(اختياري)</span></label>
                   <input type="number" min="0" step="0.01" value={formData.wholesale_price} onChange={e => setFormData({...formData, wholesale_price: parseFloat(e.target.value) || 0})} className="w-full bg-slate-50 border border-slate-200 py-3 px-4 rounded-xl focus:ring-2 focus:outline-none border-l-4 border-l-purple-500" />
                 </div>
-                <div className="sm:col-span-2">
-                  <label className="block text-sm font-bold text-slate-700 mb-1">الموسم</label>
-                  <div className="flex gap-2">
-                    {([['summer','صيفي'],['winter','شتوي']] as const).map(([k,label]) => (
-                      <button type="button" key={k} onClick={() => setFormData({...formData, season: k})}
-                        className={`flex-1 py-2.5 rounded-xl font-bold text-sm transition border ${formData.season === k ? 'bg-indigo-600 text-white border-transparent' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'}`}>
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                {!editingProductId ? (
+                {formData.type === 'service' ? null : !editingProductId ? (
                   <>
                     <div>
                       <label className="block text-sm font-bold text-slate-700 mb-1">كمية المستودع</label>
@@ -522,19 +549,23 @@ export default function Inventory() {
                     </div>
                   </>
                 )}
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">تكلفة شراء الـ{getUnitConfig(formData.unit).label} <span className="text-[10px] text-slate-400">(اختياري)</span></label>
-                  <input
-                    type="number" min="0" step="0.01"
-                    value={formData.purchase_price}
-                    onChange={e => { const v = parseFloat(e.target.value) || 0; setFormData({...formData, purchase_price: v, average_purchase_price: v}); }}
-                    style={{ '--tw-ring-color': storeSettings.themeColor + '40' } as any}
-                    className="w-full bg-slate-50 border border-slate-200 py-3 px-4 rounded-xl focus:ring-2 focus:outline-none border-l-4 border-l-amber-500"
-                  />
-                </div>
-                <div className="sm:col-span-2">
-                  <p className="text-xs text-slate-400 -mt-1">ℹ️ هذه كمية وتكلفة المخزون الافتتاحي — بعدها يتم التحديث تلقائياً عبر فواتير المشتريات. يمكن تعديل سعر البيع لاحقاً.</p>
-                </div>
+                {formData.type !== 'service' && (
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-1">تكلفة شراء الـ{getUnitConfig(formData.unit).label} <span className="text-[10px] text-slate-400">(اختياري)</span></label>
+                    <input
+                      type="number" min="0" step="0.01"
+                      value={formData.purchase_price}
+                      onChange={e => { const v = parseFloat(e.target.value) || 0; setFormData({...formData, purchase_price: v, average_purchase_price: v}); }}
+                      style={{ '--tw-ring-color': storeSettings.themeColor + '40' } as any}
+                      className="w-full bg-slate-50 border border-slate-200 py-3 px-4 rounded-xl focus:ring-2 focus:outline-none border-l-4 border-l-amber-500"
+                    />
+                  </div>
+                )}
+                {formData.type !== 'service' && (
+                  <div className="sm:col-span-2">
+                    <p className="text-xs text-slate-400 -mt-1">ℹ️ هذه كمية وتكلفة المخزون الافتتاحي — بعدها يتم التحديث تلقائياً عبر فواتير المشتريات. يمكن تعديل سعر البيع لاحقاً.</p>
+                  </div>
+                )}
                 <div className="sm:col-span-2">
                   <label className="block text-sm font-bold text-slate-700 mb-1">التصنيف</label>
                   <select value={formData.category_id} onChange={e => setFormData({...formData, category_id: e.target.value})} className="w-full bg-slate-50 border border-slate-200 py-3 px-4 rounded-xl focus:ring-2 focus:ring-indigo-500">
@@ -706,8 +737,9 @@ export default function Inventory() {
             <tbody className="divide-y divide-slate-100 text-slate-700">
               {filteredProducts.map((product) => {
                 const category = categories.find(c => c.id === product.category_id)?.name;
-                const isLowStock = qtyOf(product) < 5;
-                
+                const service = isService(product);
+                const isLowStock = !service && qtyOf(product) < 5;
+
                 return (
                   <tr key={product.id} className={`hover:bg-slate-50 transition ${product.is_hidden ? 'opacity-50 bg-slate-50/80' : ''}`}>
                     <td className="p-4 font-mono text-slate-400">
@@ -716,13 +748,18 @@ export default function Inventory() {
                         <span className="mr-2 text-[10px] font-black bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded">مخفي</span>
                       )}
                     </td>
-                    <td className={`p-4 font-bold ${product.is_hidden ? 'line-through text-slate-400' : ''}`}>{product.name}</td>
+                    <td className={`p-4 font-bold ${product.is_hidden ? 'line-through text-slate-400' : ''}`}>
+                      {product.name}
+                      {service && (
+                        <span className="mr-2 text-[10px] font-black bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">خدمة</span>
+                      )}
+                    </td>
                     <td className="p-4 text-slate-500">{category}</td>
                     <td className="p-4 text-center">
-                      <span className="text-xs font-bold bg-slate-100 text-slate-600 px-2 py-1 rounded-lg">{getUnitConfig(product.unit).label}</span>
+                      <span className="text-xs font-bold bg-slate-100 text-slate-600 px-2 py-1 rounded-lg">{service ? 'خدمة' : getUnitConfig(product.unit).label}</span>
                     </td>
-                    <td className="p-4 text-center">{product.purchase_price} {storeSettings.currency}</td>
-                    <td className="p-4 text-center font-bold text-indigo-600 bg-indigo-50/30">{product.average_purchase_price} {storeSettings.currency}</td>
+                    <td className="p-4 text-center">{service ? '—' : `${product.purchase_price} ${storeSettings.currency}`}</td>
+                    <td className="p-4 text-center font-bold text-indigo-600 bg-indigo-50/30">{service ? '—' : `${product.average_purchase_price} ${storeSettings.currency}`}</td>
 
                     <td className="p-4 text-center border-x border-slate-100 bg-slate-50/50">
                       <button onClick={() => handleEditPrice(product)} style={{ '--hover-color': storeSettings.themeColor } as any} className="flex items-center justify-center gap-2 w-full hover:text-[var(--hover-color)] transition group font-black">
@@ -732,15 +769,21 @@ export default function Inventory() {
                     </td>
 
                     <td className="p-4 text-center border-l border-slate-100 bg-slate-50/50">
-                      <button
-                        onClick={() => handleEditStock(product)}
-                        style={{ '--hover-bg': storeSettings.themeColor + '15', '--hover-text': storeSettings.themeColor } as any}
-                        className={`flex items-center justify-center gap-2 w-full font-bold px-3 py-1.5 rounded-lg transition group ${isLowStock ? 'bg-red-50 text-red-600' : 'hover:bg-[var(--hover-bg)] hover:text-[var(--hover-text)]'}`}
-                      >
-                        {formatQty(qtyOf(product), product.unit)}
-                        <Edit2 size={14} className="opacity-0 group-hover:opacity-100" />
-                      </button>
-                      <div className="text-[9px] text-slate-400 mt-1">مستودع {Math.max(0, (Number(product.stock_quantity) || 0) - dispOf(product))} · محل {dispOf(product)}</div>
+                      {service ? (
+                        <span className="inline-flex items-center gap-1 font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg">خدمة · متاحة دائماً</span>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => handleEditStock(product)}
+                            style={{ '--hover-bg': storeSettings.themeColor + '15', '--hover-text': storeSettings.themeColor } as any}
+                            className={`flex items-center justify-center gap-2 w-full font-bold px-3 py-1.5 rounded-lg transition group ${isLowStock ? 'bg-red-50 text-red-600' : 'hover:bg-[var(--hover-bg)] hover:text-[var(--hover-text)]'}`}
+                          >
+                            {formatQty(qtyOf(product), product.unit)}
+                            <Edit2 size={14} className="opacity-0 group-hover:opacity-100" />
+                          </button>
+                          <div className="text-[9px] text-slate-400 mt-1">مستودع {Math.max(0, (Number(product.stock_quantity) || 0) - dispOf(product))} · محل {dispOf(product)}</div>
+                        </>
+                      )}
                     </td>
 
                     <td className="p-4">

@@ -58,7 +58,7 @@ export default function POS() {
     } catch { alert('تعذّر تنفيذ التحويل'); }
     setSaveXferBusy(false);
   };
-  const [posSeason, setPosSeason] = useState<'all' | 'summer' | 'winter'>('all');
+  const [posType, setPosType] = useState<'all' | 'product' | 'service'>('all');
   const [historyToday, setHistoryToday] = useState(true);
   const [editingOrder, setEditingOrder] = useState<any>(null);
   const [viewExchange, setViewExchange] = useState<any>(null);
@@ -1240,8 +1240,9 @@ export default function POS() {
     (p) => {
       const normalizedName = normalizeArabic(p.name);
       const matchesSearch = searchTerms.length === 0 || searchTerms.every(term => normalizedName.includes(term)) || (p.barcode && p.barcode.includes(searchQuery));
-      const matchesSeason = posSeason === 'all' || p.season === posSeason;
-      return !p.is_hidden && (activeCategory === 'all' || p.category_id === activeCategory) && matchesSearch && matchesSeason;
+      const pType = (p as any).type === 'service' ? 'service' : 'product';
+      const matchesType = posType === 'all' || pType === posType;
+      return !p.is_hidden && (activeCategory === 'all' || p.category_id === activeCategory) && matchesSearch && matchesType;
     }
   );
 
@@ -2421,10 +2422,10 @@ export default function POS() {
             ))}
           </div>
           <div className="flex items-center gap-2 overflow-x-auto hide-scrollbar">
-            <span className="text-[11px] font-bold text-slate-400 shrink-0">الموسم</span>
-            {([['all', 'الكل'], ['summer', 'صيفي'], ['winter', 'شتوي']] as const).map(([k, label]) => (
-              <button key={k} onClick={() => setPosSeason(k)}
-                className={`shrink-0 px-4 py-2 rounded-xl text-xs font-black transition ${posSeason === k ? 'bg-amber-500 text-white shadow-md' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'}`}>
+            <span className="text-[11px] font-bold text-slate-400 shrink-0">النوع</span>
+            {([['all', 'الكل'], ['product', 'منتجات'], ['service', 'خدمات']] as const).map(([k, label]) => (
+              <button key={k} onClick={() => setPosType(k)}
+                className={`shrink-0 px-4 py-2 rounded-xl text-xs font-black transition ${posType === k ? 'bg-amber-500 text-white shadow-md' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'}`}>
                 {label}
               </button>
             ))}
@@ -2478,8 +2479,9 @@ export default function POS() {
         <div className="flex-1 overflow-y-auto p-6 bg-slate-50/50 dark:bg-slate-900 border-l border-gray-100 dark:border-slate-800 relative">
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
             {filteredProducts.map((product) => {
-              const isOutOfStock = product.stock_quantity <= 0;
-              const isLowStock = product.stock_quantity > 0 && product.stock_quantity < 5;
+              const service = (product as any).type === 'service';
+              const isOutOfStock = !service && product.stock_quantity <= 0;
+              const isLowStock = !service && product.stock_quantity > 0 && product.stock_quantity < 5;
               const avgPrice = product.average_purchase_price || product.purchase_price || 0;
               const lastPrice = product.purchase_price || 0;
 
@@ -2489,8 +2491,8 @@ export default function POS() {
                   onClick={() => !isOutOfStock && handleAddProduct(product)}
                   className={`bg-white dark:bg-slate-800 p-4 rounded-3xl shadow-sm hover:shadow-xl cursor-pointer transition-all duration-300 transform hover:-translate-y-1 flex flex-col justify-between border border-gray-100 dark:border-slate-700 ring-1 ring-black/5 dark:ring-white/5 relative overflow-hidden group ${isOutOfStock ? 'opacity-60 cursor-not-allowed grayscale' : ''}`}
                 >
-                  <div className={`absolute top-0 right-0 rounded-bl-3xl rounded-tr-xl px-3 py-1 text-xs font-bold text-white shadow-sm transition-colors ${isOutOfStock ? 'bg-slate-500' : isLowStock ? 'bg-red-500' : 'bg-green-500 dark:bg-green-600'}`}>
-                    {isOutOfStock ? 'نفذت' : formatQty(product.stock_quantity, product.unit)}
+                  <div className={`absolute top-0 right-0 rounded-bl-3xl rounded-tr-xl px-3 py-1 text-xs font-bold text-white shadow-sm transition-colors ${service ? 'bg-emerald-500' : isOutOfStock ? 'bg-slate-500' : isLowStock ? 'bg-red-500' : 'bg-green-500 dark:bg-green-600'}`}>
+                    {service ? 'خدمة' : isOutOfStock ? 'نفذت' : formatQty(product.stock_quantity, product.unit)}
                   </div>
 
                   <div className="pt-2">
