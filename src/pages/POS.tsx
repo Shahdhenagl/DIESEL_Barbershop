@@ -366,6 +366,7 @@ export default function POS() {
       couponCode: order.coupon_code,
       couponDiscountAmount: order.discount_amount || 0,
       salesperson: order.salesperson_name || '',
+      cashierName: order.cashier_name || '',
     };
     printInvoice(order.id, details);
   };
@@ -990,6 +991,7 @@ export default function POS() {
   </div>
 
   ${customerBlock}
+  ${orderDetails.cashierName ? `<div class="customer-info-grid"><div class="info-item"><strong>الكابتن المسؤول:</strong> <span>${escapeHtml(orderDetails.cashierName)}</span></div></div>` : ''}
   ${orderDetails.salesperson ? `<div class="customer-info-grid"><div class="info-item"><strong>مسؤول المبيعات:</strong> <span>${escapeHtml(orderDetails.salesperson)}</span></div></div>` : ''}
 
   <table>
@@ -1131,7 +1133,8 @@ export default function POS() {
       totalDebt: (customerDebt || 0) + (currentTotal - effectivePaidAmount),
       couponCode: currentCouponCode,
       couponDiscountAmount: currentCouponDiscount,
-      salesperson: currentSalesperson
+      salesperson: currentSalesperson,
+      cashierName: useStore.getState().activeCashier?.name || 'مدير النظام',
     };
 
     const actualCustomer = useStore.getState().customers.find(c =>
