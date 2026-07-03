@@ -13,7 +13,7 @@ import { printDocument } from '../utils/printWindow';
 
 
 export default function POS() {
-  const { products, categories, cart, addToCart, addToCartQty, removeFromCart, updateQuantity, updatePrice, clearCart, checkout, processReturn, storeSettings, orders, activeInvoiceId, customers, activeCashier, logoutPOS, isOnline, offlineQueue, offlineReturnsQueue, isSyncing, syncOfflineQueue, syncOfflineReturnsQueue, addCashierNote, addExpense, invoiceType, setInvoiceType, employees, salesperson, setSalesperson, deleteOrder, savingsTransfer, addEmployeeTransaction, updateProduct, heldInvoices, holdInvoice, confirmHeldInvoice, returnHeldInvoice } = useStore();
+  const { products, categories, cart, addToCart, addToCartQty, removeFromCart, updateQuantity, updatePrice, clearCart, checkout, processReturn, storeSettings, orders, activeInvoiceId, customers, activeCashier, logoutPOS, isOnline, offlineQueue, offlineReturnsQueue, isSyncing, syncOfflineQueue, syncOfflineReturnsQueue, addCashierNote, addExpense, invoiceType, setInvoiceType, employees, salespeople, setSalespeople, deleteOrder, savingsTransfer, addEmployeeTransaction, updateProduct, heldInvoices, holdInvoice, confirmHeldInvoice, returnHeldInvoice } = useStore();
   // Transfer day-closing balance to savings (with manager OTP)
   const [showSaveXfer, setShowSaveXfer] = useState(false);
   const [saveXfer, setSaveXfer] = useState<Record<string, string>>({ cash: '', visa: '', wallet: '', instapay: '' });
@@ -365,7 +365,7 @@ export default function POS() {
       totalDebt: Math.max(0, (order.total || 0) - (order.paid_amount || 0)),
       couponCode: order.coupon_code,
       couponDiscountAmount: order.discount_amount || 0,
-      salesperson: order.salesperson_name || '',
+      salesperson: (order.salespeople?.length ? order.salespeople.map((s: any) => s.name) : (order.salesperson_name ? [order.salesperson_name] : [])).join('، '),
       cashierName: order.cashier_name || '',
     };
     printInvoice(order.id, details);
@@ -375,7 +375,8 @@ export default function POS() {
   const sendOrderWhatsApp = (order: any) => {
     const invoiceLink = `${window.location.origin}/view-invoice/${order.id}`;
     const itemsText = (order.items || []).map((i: any) => `• ${i.name} (${formatQty(i.quantity, i.unit)}) - ${(i.sale_price * i.quantity).toFixed(2)} ${storeSettings.currency}`).join('\n');
-    const spLine = order.salesperson_name ? `*مسؤول المبيعات:* ${order.salesperson_name}\n` : '';
+    const spNames = (order.salespeople?.length ? order.salespeople.map((s: any) => s.name) : (order.salesperson_name ? [order.salesperson_name] : [])).join('، ');
+    const spLine = spNames ? `*الكباتن المنفّذون:* ${spNames}\n` : '';
     const message = `*فاتورة من ${storeSettings.name}*\n\n*رقم الفاتورة:* #${order.id}\n${spLine}*الإجمالي:* ${(order.total || 0).toFixed(2)} ${storeSettings.currency}\n\n*عرض الفاتورة بالتفاصيل:*\n${invoiceLink}\n\n*تفاصيل الطلب:*\n${itemsText}\n\n*شكراً لتعاملكم معنا!*`;
     let phone = (order.customer?.phone || '').replace(/\D/g, '');
     const code = storeSettings.whatsappCountryCode || '2';
@@ -992,7 +993,7 @@ export default function POS() {
 
   ${customerBlock}
   ${orderDetails.cashierName ? `<div class="customer-info-grid"><div class="info-item"><strong>الكابتن المسؤول:</strong> <span>${escapeHtml(orderDetails.cashierName)}</span></div></div>` : ''}
-  ${orderDetails.salesperson ? `<div class="customer-info-grid"><div class="info-item"><strong>مسؤول المبيعات:</strong> <span>${escapeHtml(orderDetails.salesperson)}</span></div></div>` : ''}
+  ${orderDetails.salesperson ? `<div class="customer-info-grid"><div class="info-item"><strong>الكباتن المنفّذون:</strong> <span>${escapeHtml(orderDetails.salesperson)}</span></div></div>` : ''}
 
   <table>
     <thead><tr>
@@ -1069,7 +1070,7 @@ export default function POS() {
     const currentCustomerCard = customerId;
     const currentCouponCode = validCoupon?.code;
     const currentCouponDiscount = couponDiscountAmount;
-    const currentSalesperson = salesperson?.name || ''; // قبل ما الـ checkout يصفّره
+    const currentSalesperson = (salespeople || []).map((s) => s.name).join('، '); // قبل ما الـ checkout يصفّره
     const matchedCustomer = customers.find(c =>
       (currentCustomerPhone && c.phone === currentCustomerPhone) ||
       (currentCustomerCard && (c.card_number === currentCustomerCard || c.custom_id === currentCustomerCard))
@@ -1437,7 +1438,7 @@ export default function POS() {
                         const message = `*فاتورة جديدة من ${storeSettings.name}*\n\n` +
                           `*رقم الفاتورة:* #${invId}\n` +
                           `*التاريخ:* ${new Date().toLocaleString('ar-SA')}\n` +
-                          (orderDetails.salesperson ? `*مسؤول المبيعات:* ${orderDetails.salesperson}\n` : '') +
+                          (orderDetails.salesperson ? `*الكباتن المنفّذون:* ${orderDetails.salesperson}\n` : '') +
                           `*الإجمالي:* ${orderDetails.total.toFixed(2)} ${storeSettings.currency}\n\n` +
                           `*عرض الفاتورة بالتفاصيل:*\n${invoiceLink}\n\n` +
                           `*تفاصيل الطلب:*\n${itemsText}\n\n` +
@@ -2708,19 +2709,29 @@ export default function POS() {
 
         {/* Footer Checkout */}
         <div className="p-3 bg-white dark:bg-slate-800 border-t border-gray-100 dark:border-slate-700 shadow-2xl">
-          {/* Salesperson (for commission tracking) */}
-          <div className="mb-3">
-            <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1">👤 الموظف البائع (لحساب مبيعاته وعمولته)</label>
-            <select
-              id="pos-salesperson"
-              value={salesperson?.id || ''}
-              onChange={(e) => { const emp = employees.find((x) => x.id === e.target.value); setSalesperson(emp ? { id: emp.id, name: emp.name } : null); }}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); focusById('pos-checkout-print-btn'); } }}
-              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-sm font-bold text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none"
-            >
-              <option value="">— بدون تحديد —</option>
-              {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}{emp.job_title ? ` (${emp.job_title})` : ''}</option>)}
-            </select>
+          {/* الكباتن المنفّذون — اختيار متعدد (العمولة تتقسّم بينهم بالتساوي) */}
+          <div className="mb-3" id="pos-salesperson">
+            <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1">👤 الكباتن المنفّذون (اختَر واحد أو أكثر — العمولة تتقسّم بينهم بالتساوي)</label>
+            <div className="flex flex-wrap gap-2 max-h-28 overflow-y-auto p-1">
+              {employees.length === 0 ? (
+                <span className="text-xs text-slate-400">لا يوجد موظفون — أضِفهم من قسم الموظفين.</span>
+              ) : employees.map((emp) => {
+                const selected = salespeople.some((s) => s.id === emp.id);
+                return (
+                  <button
+                    type="button"
+                    key={emp.id}
+                    onClick={() => setSalespeople(selected ? salespeople.filter((s) => s.id !== emp.id) : [...salespeople, { id: emp.id, name: emp.name }])}
+                    className={`px-3 py-2 rounded-xl text-sm font-bold border transition ${selected ? 'bg-indigo-600 text-white border-transparent shadow' : 'bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100'}`}
+                  >
+                    {selected ? '✓ ' : ''}{emp.name}{emp.job_title ? ` (${emp.job_title})` : ''}
+                  </button>
+                );
+              })}
+            </div>
+            {salespeople.length > 1 && (
+              <p className="text-[11px] text-emerald-600 font-bold mt-1">{salespeople.length} كباتن — كل واحد يُحسب له {(100 / salespeople.length).toFixed(0)}% من الفاتورة في مبيعاته وعمولته.</p>
+            )}
           </div>
 
           {/* Wholesale / half OTP gate */}

@@ -77,6 +77,9 @@ export default function Invoices() {
     const invoiceUrl = `${window.location.origin}/view-invoice/${order.id}`;
     const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(invoiceUrl)}`;
 
+    const spNames = ((order as any).salespeople?.length ? (order as any).salespeople.map((s: any) => s.name) : (order.salesperson_name ? [order.salesperson_name] : [])).join('، ');
+    const captainsItem = spNames ? `<div class="info-item"><strong>الكباتن المنفّذون:</strong> <span>${escapeHtml(spNames)}</span></div>` : '';
+
     const customerBlock = order.customer
       ? `<div class="customer-info-grid">
             <div class="info-item"><strong>اسم العميل:</strong> <span>${escapeHtml(order.customer.name || '—')}</span></div>
@@ -84,6 +87,7 @@ export default function Invoices() {
             <div class="info-item"><strong>رقم الكارت (ID):</strong> <span dir="ltr">${escapeHtml(order.customer.custom_id || order.customer.id.substring(0, 8) || '—')}</span></div>
             <div class="info-item"><strong>رقم الفاتورة:</strong> <span>#${order.id}</span></div>
             <div class="info-item"><strong>المسؤول:</strong> <span>${escapeHtml(order.cashier_name || '—')}</span></div>
+            ${captainsItem}
             <div class="info-item"><strong>التاريخ:</strong> <span>${printDate}</span></div>
             <div class="info-item" style="grid-column: span 2; border-top: 1px dashed #e2e8f0; padding-top: 4px; margin-top: 2px;">
               <strong>إجمالي المديونية الحالية:</strong> 
@@ -94,6 +98,7 @@ export default function Invoices() {
             <div class="info-item"><strong>اسم العميل:</strong> <span>عميل نقدي</span></div>
             <div class="info-item"><strong>رقم الفاتورة:</strong> <span>#${order.id}</span></div>
             <div class="info-item"><strong>المسؤول:</strong> <span>${escapeHtml(order.cashier_name || '—')}</span></div>
+            ${captainsItem}
             <div class="info-item"><strong>التاريخ:</strong> <span>${printDate}</span></div>
          </div>`;
 
@@ -722,7 +727,14 @@ export default function Invoices() {
                         )}
                       </td>
                       <td className="p-4 text-slate-500">{new Date(order.date).toLocaleString('ar-SA')}</td>
-                      <td className="p-4 text-center font-bold text-indigo-600">{order.cashier_name || 'غير معروف'}</td>
+                      <td className="p-4 text-center font-bold text-indigo-600">
+                        {order.cashier_name || 'غير معروف'}
+                        {(() => {
+                          const sps = (order as any).salespeople as { id: string; name: string }[] | undefined;
+                          const names = (sps?.length ? sps.map((s) => s.name) : ((order as any).salesperson_name ? [(order as any).salesperson_name] : [])).join('، ');
+                          return names ? <div className="text-[10px] font-bold text-purple-500 mt-0.5">كباتن: {names}</div> : null;
+                        })()}
+                      </td>
                       <td className="p-4 text-center font-bold text-purple-600">
                         {(order as any).salesperson_name || '—'}
                         {(order as any).exchange_data && <div className="mt-1"><span className="text-[10px] font-black bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">↺ استبدال</span></div>}

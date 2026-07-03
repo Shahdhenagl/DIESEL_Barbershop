@@ -23,16 +23,30 @@ export default function Employees() {
   const employeeMonthStats = (emp: any, month: string) => {
     const cashier = emp?.cashier_id ? cashiers.find((c: any) => c.id === emp.cashier_id) : null;
     const cname = cashier?.name || emp?.name;
-    const rows = orders.filter((o: any) => !o.is_deleted && o.type === 'sale' && String(o.date || '').slice(0, 7) === month && (
-      (emp?.id && o.salesperson_id === emp.id) ||
-      (emp?.cashier_id && !o.salesperson_id && o.cashier_name === cname)
-    ));
-    const sales = rows.reduce((s: number, o: any) => s + (Number(o.total) || 0), 0);
-    const profit = rows.reduce((s: number, o: any) => s + (o.items || []).reduce((ps: number, it: any) => {
+    const orderProfit = (o: any) => (o.items || []).reduce((ps: number, it: any) => {
       const qty = (Number(it.quantity) || 0) - (Number(it.returned_quantity) || 0);
       const cost = Number(it.average_purchase_price ?? it.purchase_price) || 0;
       return ps + ((Number(it.sale_price) || 0) - cost) * qty;
-    }, 0), 0);
+    }, 0);
+    // عند تعدد الكباتن على الفاتورة تُقسَّم المبيعات والأرباح بينهم بالتساوي.
+    let sales = 0, profit = 0;
+    orders
+      .filter((o: any) => !o.is_deleted && o.type === 'sale' && String(o.date || '').slice(0, 7) === month)
+      .forEach((o: any) => {
+        const sps: any[] = Array.isArray(o.salespeople) && o.salespeople.length
+          ? o.salespeople
+          : (o.salesperson_id ? [{ id: o.salesperson_id, name: o.salesperson_name }] : []);
+        let share = 0;
+        if (sps.length) {
+          if (emp?.id && sps.some((s) => s.id === emp.id)) share = 1 / sps.length;
+        } else if (emp?.cashier_id && o.cashier_name === cname) {
+          share = 1; // فاتورة بلا كابتن محدد → تُنسب للكاشير المرتبط بالموظف
+        }
+        if (share > 0) {
+          sales += (Number(o.total) || 0) * share;
+          profit += orderProfit(o) * share;
+        }
+      });
     return { sales, profit };
   };
 
