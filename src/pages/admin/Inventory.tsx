@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useStore, type Product } from '../../store/useStore';
-import { Plus, Edit2, EyeOff, Eye, Search, X, Tag, FileText, Table as TableIcon, Box, AlertTriangle, TrendingUp, ScanLine, CheckCircle2, Printer } from 'lucide-react';
+import { Plus, Edit2, EyeOff, Eye, Search, X, Tag, FileText, Table as TableIcon, Box, AlertTriangle, TrendingUp, ScanLine, CheckCircle2, Printer, Trash2 } from 'lucide-react';
 import { normalizeArabic } from '../../utils/textUtils';
 import { UNIT_OPTIONS, getUnitConfig, isFractionalUnit, formatQty } from '../../utils/units';
 import { generateBarcode, printBarcodeLabels } from '../../utils/printBarcodeLabels';
@@ -16,7 +16,24 @@ const SERVICE_STOCK = 1_000_000;
 const isService = (p: any) => p?.type === 'service';
 
 export default function Inventory() {
-  const { products, categories, storeSettings, addProduct, updateProduct, orders } = useStore();
+  const { products, categories, storeSettings, addProduct, updateProduct, deleteProduct, orders } = useStore();
+
+  // حذف منتج من المخزون نهائياً. الفواتير القديمة تفضل سليمة (order_items بتخزّن
+  // الاسم/السعر/التكلفة كـ snapshot، والـ FK on delete set null) فالحسابات متتأثرش.
+  const handleDeleteProduct = async (product: Product) => {
+    const usedInInvoice = orders.some((o: any) => (o.items || []).some((it: any) => it.id === product.id));
+    const msg = `حذف المنتج «${product.name}» نهائياً من المخزون؟\n\n` +
+      (usedInInvoice
+        ? '✅ المنتج ده موجود في فواتير قديمة — الفواتير هتفضل زي ما هي بالكامل، والحسابات مش هتتأثر إطلاقاً. هيتشال بس من المخزون والكاشير.\n\n'
+        : '') +
+      '(لو عايزة تخفيه من الكاشير بس من غير حذف، استخدمي زر الإخفاء 👁️)';
+    if (!window.confirm(msg)) return;
+    try {
+      await deleteProduct(product.id);
+    } catch (e: any) {
+      alert('تعذّر حذف المنتج: ' + (e?.message || ''));
+    }
+  };
   const [searchQuery, setSearchQuery] = useState('');
   const [stockLocation, setStockLocation] = useState<'all' | 'warehouse' | 'display'>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | 'product' | 'service'>('all');
@@ -849,6 +866,13 @@ export default function Inventory() {
                           title={product.is_hidden ? 'إظهار المنتج للكاشير' : 'إخفاء المنتج من الكاشير'}
                         >
                           {product.is_hidden ? <Eye size={18} /> : <EyeOff size={18} />}
+                        </button>
+                        <button
+                          onClick={() => handleDeleteProduct(product)}
+                          className="p-2 text-red-400 hover:bg-red-50 hover:text-red-600 rounded-lg transition"
+                          title="حذف المنتج نهائياً (الفواتير القديمة تفضل سليمة)"
+                        >
+                          <Trash2 size={18} />
                         </button>
                       </div>
                     </td>
