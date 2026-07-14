@@ -11,6 +11,7 @@ import Customers from './pages/admin/Customers';
 import WhatsAppCampaigns from './pages/admin/WhatsAppCampaigns';
 import Suppliers from './pages/admin/Suppliers';
 import DeferredAccounts from './pages/admin/DeferredAccounts';
+import Installments from './pages/admin/Installments';
 import Settings from './pages/admin/Settings';
 import Analytics from './pages/admin/Analytics';
 import Finance from './pages/admin/Finance';
@@ -180,6 +181,7 @@ function App() {
             <Route path="suppliers" element={<Suppliers />} />
             <Route path="cashiers" element={<Cashiers />} />
             <Route path="deferred" element={<DeferredAccounts />} />
+            <Route path="installments" element={<Installments />} />
             <Route path="finance" element={<Finance />} />
             <Route path="financing" element={<Financing />} />
             <Route path="offline-invoices" element={<OfflineInvoices />} />

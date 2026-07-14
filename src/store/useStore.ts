@@ -396,6 +396,51 @@ export interface AdminUser {
   created_at?: string;
 }
 
+// ─── التقسيط ──────────────────────────────────────────────────
+export interface InstallmentPlan {
+  id: string;
+  order_id: string;
+  customer_id: string;
+  goods_total: number;
+  down_payment: number;
+  financed_amount: number;
+  interest_type: 'none' | 'percent' | 'fixed';
+  interest_value: number;
+  interest_amount: number;
+  total_due: number;
+  installments_count: number;
+  interval_type: 'monthly' | 'quarterly' | 'custom';
+  interval_days?: number | null;
+  status: 'active' | 'completed';
+  note?: string | null;
+  created_at?: string;
+}
+export interface Installment {
+  id: string;
+  plan_id: string;
+  order_id: string;
+  customer_id: string;
+  seq: number;
+  due_date: string;
+  amount: number;
+  paid: boolean;
+  paid_amount: number;
+  paid_at?: string | null;
+  payment_order_id?: string | null;
+  notified?: boolean;
+  created_at?: string;
+}
+// معطيات إنشاء خطة تقسيط.
+export interface InstallmentPlanInput {
+  installments_count: number;
+  interval_type: 'monthly' | 'quarterly' | 'custom';
+  interval_days?: number;
+  interest_type: 'none' | 'percent' | 'fixed';
+  interest_value: number;
+  first_due_date?: string; // تاريخ أول قسط (افتراضي: بعد فترة واحدة من اليوم)
+  note?: string;
+}
+
 // ─── Store Interface ──────────────────────────────────────────
 interface CashierStore {
   storeSettings: StoreSettings;
@@ -430,6 +475,11 @@ interface CashierStore {
   maintenanceAppointments: MaintenanceAppointment[];
 
   // Data loading
+  installmentPlans: InstallmentPlan[];
+  installments: Installment[];
+  loadInstallments: () => Promise<void>;
+  createInstallmentPlan: (orderId: string, input: InstallmentPlanInput) => Promise<boolean>;
+  collectInstallment: (installmentId: string, splitPayments?: { cash: number; visa: number; wallet: number; instapay: number; method5?: number; method6?: number }, paymentMethod?: string) => Promise<boolean>;
   loadAll: (silent?: boolean) => Promise<void>;
   loadSettingsOnly: () => Promise<void>;
   loadProductsOnly: () => Promise<void>;
@@ -788,6 +838,8 @@ export const useStore = create<CashierStore>((set, get) => ({
   salespeople: [],
   setSalespeople: (sp) => set({ salespeople: sp }),
   orders: [],
+  installmentPlans: [],
+  installments: [],
   expenses: [],
   financingAccounts: [],
   financingPayments: [],
@@ -1058,6 +1110,9 @@ export const useStore = create<CashierStore>((set, get) => ({
         employeeTransactions: (employeeTransactionsRes.data ?? []) as EmployeeTransaction[],
         employeeLeaves: (employeeLeavesRes.data ?? []) as EmployeeLeave[],
       });
+
+      // الأقساط: تحميل منفصل (لا يكسر loadAll لو الجدول لسه مش موجود قبل migration db/27)
+      get().loadInstallments();
 
       // Fetch expenses separately to avoid breaking the whole loadAll if the table is missing
       try {
@@ -1953,6 +2008,129 @@ export const useStore = create<CashierStore>((set, get) => ({
       console.error("Failed to pay invoice debt:", err);
       alert("حدث خطأ أثناء سداد المديونية.");
       return null;
+    }
+  },
+
+  // ── التقسيط ──────────────────────────────────────────────────
+  loadInstallments: async () => {
+    try {
+      const [plansRes, instRes] = await Promise.all([
+        supabase.from('installment_plans').select('*').order('created_at', { ascending: false }),
+        supabase.from('installments').select('*').order('due_date', { ascending: true }),
+      ]);
+      if (plansRes.error || instRes.error) return; // الجدول لسه مش موجود (قبل migration) → تجاهل بهدوء
+      set({
+        installmentPlans: (plansRes.data ?? []) as InstallmentPlan[],
+        installments: (instRes.data ?? []) as Installment[],
+      });
+    } catch { /* تجاهل */ }
+  },
+
+  // ينشئ خطة تقسيط لفاتورة آجل: يحسب الفايدة، يضيفها لإجمالي الفاتورة، ويولّد جدول الأقساط.
+  createInstallmentPlan: async (orderId, input) => {
+    const state = get();
+    const order = state.orders.find(o => o.id === orderId);
+    if (!order) { alert('الفاتورة غير موجودة'); return false; }
+    const customerId = (order.customer?.id || (order as any).customer_id) as string;
+    if (!customerId) { alert('لازم تكون الفاتورة على عميل مسجّل عشان التقسيط'); return false; }
+
+    const goodsTotal = Number(order.total) || 0;
+    const downPayment = Number(order.paid_amount) || 0;
+    const financed = Math.max(0, goodsTotal - downPayment);
+    if (financed <= 0.01) { alert('لا يوجد مبلغ متبقٍّ لتقسيطه (الفاتورة مدفوعة بالكامل)'); return false; }
+
+    const count = Math.max(1, Math.floor(input.installments_count));
+    const interestAmount = input.interest_type === 'percent'
+      ? financed * (Number(input.interest_value) || 0) / 100
+      : input.interest_type === 'fixed'
+        ? (Number(input.interest_value) || 0)
+        : 0;
+    const totalDue = financed + interestAmount;
+
+    // مواعيد الاستحقاق
+    const stepMonths = input.interval_type === 'monthly' ? 1 : input.interval_type === 'quarterly' ? 3 : 0;
+    const stepDays = input.interval_type === 'custom' ? Math.max(1, Number(input.interval_days) || 30) : 0;
+    const baseDate = input.first_due_date ? new Date(`${input.first_due_date}T12:00:00`) : (() => {
+      const d = new Date(); d.setHours(12, 0, 0, 0);
+      if (stepMonths) d.setMonth(d.getMonth() + stepMonths); else d.setDate(d.getDate() + stepDays);
+      return d;
+    })();
+    const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+    // توزيع المبلغ على الأقساط (تقريب لأقرب قرش، والفرق يتحمّله آخر قسط)
+    const per = Math.round((totalDue / count) * 100) / 100;
+    const amounts: number[] = Array.from({ length: count }, () => per);
+    amounts[count - 1] = Math.round((totalDue - per * (count - 1)) * 100) / 100;
+
+    try {
+      // 1) نضيف الفايدة لإجمالي الفاتورة (تُحسب كإيراد ضمن الديون والمالية)
+      if (interestAmount > 0.001) {
+        const newTotal = goodsTotal + interestAmount;
+        const { error: upErr } = await supabase.from('orders').update({ total: newTotal }).eq('id', orderId);
+        if (upErr) throw upErr;
+        set((s) => ({ orders: s.orders.map(o => o.id === orderId ? { ...o, total: newTotal } : o) }));
+      }
+
+      // 2) نُنشئ الخطة
+      const { data: plan, error: planErr } = await supabase.from('installment_plans').insert({
+        order_id: orderId, customer_id: customerId,
+        goods_total: goodsTotal, down_payment: downPayment, financed_amount: financed,
+        interest_type: input.interest_type, interest_value: Number(input.interest_value) || 0, interest_amount: interestAmount,
+        total_due: totalDue, installments_count: count,
+        interval_type: input.interval_type, interval_days: input.interval_type === 'custom' ? stepDays : null,
+        status: 'active', note: input.note || null,
+      }).select().single();
+      if (planErr) throw planErr;
+
+      // 3) نُنشئ الأقساط
+      const rows = amounts.map((amt, i) => {
+        const d = new Date(baseDate);
+        if (stepMonths) d.setMonth(baseDate.getMonth() + i * stepMonths);
+        else d.setDate(baseDate.getDate() + i * stepDays);
+        return { plan_id: (plan as any).id, order_id: orderId, customer_id: customerId, seq: i + 1, due_date: ymd(d), amount: amt };
+      });
+      const { error: instErr } = await supabase.from('installments').insert(rows);
+      if (instErr) throw instErr;
+
+      await get().loadInstallments();
+      return true;
+    } catch (err: any) {
+      console.error('createInstallmentPlan error:', err);
+      alert('تعذّر إنشاء خطة التقسيط: ' + (err?.message || '') + '\n(تأكدي إنك شغّلتِ migration db/27_installments.sql)');
+      return false;
+    }
+  },
+
+  // تحصيل قسط: يمرّ على منطق سداد الأجل (يتحسب في المالية) + يعلّم القسط مدفوعاً.
+  collectInstallment: async (installmentId, splitPayments, paymentMethod = 'cash') => {
+    const state = get();
+    const inst = state.installments.find(i => i.id === installmentId);
+    if (!inst || inst.paid) return false;
+    const amount = Number(inst.amount) || 0;
+    if (amount <= 0) return false;
+
+    const paymentId = await get().payInvoiceDebt(inst.order_id, inst.customer_id, amount, splitPayments, paymentMethod, 0);
+    if (!paymentId) return false; // فشل السداد (رسالة الخطأ اتعرضت داخل payInvoiceDebt)
+
+    try {
+      const paidAt = new Date().toISOString();
+      const { error } = await supabase.from('installments')
+        .update({ paid: true, paid_amount: amount, paid_at: paidAt, payment_order_id: paymentId })
+        .eq('id', installmentId);
+      if (error) throw error;
+
+      // لو كل الأقساط اتدفعت → الخطة مكتملة
+      const planInsts = state.installments.filter(i => i.plan_id === inst.plan_id);
+      const allPaidNow = planInsts.every(i => i.id === installmentId ? true : i.paid);
+      if (allPaidNow) await supabase.from('installment_plans').update({ status: 'completed' }).eq('id', inst.plan_id);
+
+      await get().loadInstallments();
+      return true;
+    } catch (err) {
+      console.error('collectInstallment error:', err);
+      // السداد اتسجّل بس تعليم القسط فشل — نعيد التحميل عشان الحالة تبقى صح
+      await get().loadInstallments();
+      return true;
     }
   },
 

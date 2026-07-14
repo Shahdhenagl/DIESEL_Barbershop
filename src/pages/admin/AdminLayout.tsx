@@ -1,5 +1,5 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Package, Settings, LogOut, FileText, Users, BarChart3, Wallet, MessageCircle, CreditCard, Building2, BellRing, WifiOff, Ticket, PieChart, Briefcase, Handshake, PiggyBank, ClipboardCheck, FileBarChart, Menu, X } from 'lucide-react';
+import { LayoutDashboard, Package, Settings, LogOut, FileText, Users, BarChart3, Wallet, MessageCircle, CreditCard, Building2, BellRing, WifiOff, Ticket, PieChart, Briefcase, Handshake, PiggyBank, ClipboardCheck, FileBarChart, Menu, X, CalendarClock } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import { useEffect, useState } from 'react';
 
@@ -66,6 +66,7 @@ export default function AdminLayout() {
     { section: 'العملاء', items: [
       { name: 'قاعدة العملاء', path: '/admin/customers', icon: Users },
       { name: 'حسابات الآجل', path: '/admin/deferred', icon: CreditCard },
+      { name: 'الأقساط والتحصيل', path: '/admin/installments', icon: CalendarClock },
       { name: 'حملات واتساب', path: '/admin/whatsapp-campaigns', icon: MessageCircle },
     ]},
     { section: 'الموردين', items: [

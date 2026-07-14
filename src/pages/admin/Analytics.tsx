@@ -2,9 +2,9 @@ import { useState, useEffect, useMemo } from 'react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList
 } from 'recharts';
-import { 
-  TrendingUp, TrendingDown, DollarSign, Package, Users, 
-  FileText, Table as TableIcon, RefreshCw
+import {
+  TrendingUp, TrendingDown, DollarSign, Package, Users,
+  FileText, Table as TableIcon, RefreshCw, CalendarClock, AlertTriangle
 } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import { calculateInvoiceProfit } from '../../utils/invoiceProfit';
@@ -26,7 +26,11 @@ declare module 'jspdf' {
 }
 
 export default function Analytics() {
-  const { storeSettings, loadAnalyticsData, purchaseInvoices, products, expenses, orders: globalOrders } = useStore();
+  const { storeSettings, loadAnalyticsData, purchaseInvoices, products, expenses, orders: globalOrders, installments } = useStore();
+  // ملخّص الأقساط (المتبقّي/المتأخّر) — التحصيلات نفسها بتدخل المالية كسداد أجل تلقائياً.
+  const instToday = new Date().toISOString().slice(0, 10);
+  const installmentOutstanding = installments.filter((i) => !i.paid).reduce((s, i) => s + (Number(i.amount) || 0), 0);
+  const installmentOverdue = installments.filter((i) => !i.paid && i.due_date < instToday).reduce((s, i) => s + (Number(i.amount) || 0), 0);
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState<'today' | '7d' | '30d' | 'thisMonth' | 'thisYear' | 'all'>('30d');
@@ -387,12 +391,26 @@ export default function Analytics() {
           icon={Users} 
           color="amber" 
         />
-        <StatCard 
-          title="إجمالي المديونية للموردين" 
-          value={stats.totalSupplierDebt} 
+        <StatCard
+          title="إجمالي المديونية للموردين"
+          value={stats.totalSupplierDebt}
           unit={storeSettings.currency}
-          icon={FileText} 
-          color="red" 
+          icon={FileText}
+          color="red"
+        />
+        <StatCard
+          title="متبقّي أقساط العملاء"
+          value={installmentOutstanding}
+          unit={storeSettings.currency}
+          icon={CalendarClock}
+          color="indigo"
+        />
+        <StatCard
+          title="أقساط متأخّرة"
+          value={installmentOverdue}
+          unit={storeSettings.currency}
+          icon={AlertTriangle}
+          color="red"
         />
       </div>
 
