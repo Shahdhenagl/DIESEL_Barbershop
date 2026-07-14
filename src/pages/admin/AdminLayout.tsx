@@ -55,6 +55,7 @@ export default function AdminLayout() {
     ]},
     { section: 'المبيعات والفواتير', items: [
       { name: 'عروض الأسعار', path: '/admin/quotations', icon: FileText },
+      { name: 'فواتير الأقساط والتحصيل', path: '/admin/installments', icon: CalendarClock },
       { name: 'الفواتير والمرتجعات', path: '/admin/invoices', icon: FileText },
       { name: 'الفواتير الأوفلاين', path: '/admin/offline-invoices', icon: WifiOff },
       { name: 'كوبونات الخصم', path: '/admin/coupons', icon: Ticket },
@@ -67,7 +68,6 @@ export default function AdminLayout() {
     { section: 'العملاء', items: [
       { name: 'قاعدة العملاء', path: '/admin/customers', icon: Users },
       { name: 'حسابات الآجل', path: '/admin/deferred', icon: CreditCard },
-      { name: 'الأقساط والتحصيل', path: '/admin/installments', icon: CalendarClock },
       { name: 'حملات واتساب', path: '/admin/whatsapp-campaigns', icon: MessageCircle },
     ]},
     { section: 'الموردين', items: [
