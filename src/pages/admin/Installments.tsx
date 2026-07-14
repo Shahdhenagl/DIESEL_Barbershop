@@ -52,7 +52,7 @@ export default function Installments() {
   };
 
   const sendReminder = (inst: any, insts: any[], note = '') => {
-    const link = waLink(custPhone(inst.customer_id), buildReminderMsg(inst, insts, note), (storeSettings as any).whatsappCountryCode || '20', [storeSettings.phone, (storeSettings as any).phone2]);
+    const link = waLink(custPhone(inst.customer_id), buildReminderMsg(inst, insts, note), (storeSettings as any).whatsappCountryCode || '20');
     if (!link) { alert('رقم هاتف العميل غير صالح أو غير موجود.'); return; }
     window.open(link, '_blank');
   };

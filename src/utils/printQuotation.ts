@@ -175,7 +175,7 @@ export function quotationWhatsAppText(q: QuotationPrintData, settings: CompanyLi
 }
 
 export function sendQuotationWhatsApp(q: QuotationPrintData, settings: CompanyLike): void {
-  const link = waLink(q.recipient_phone, quotationWhatsAppText(q, settings), settings.whatsappCountryCode || '20', [settings.phone, settings.phone2]);
+  const link = waLink(q.recipient_phone, quotationWhatsAppText(q, settings), settings.whatsappCountryCode || '20');
   if (!link) { alert('رقم هاتف العميل غير صالح أو غير موجود في هذا العرض.'); return; }
   window.open(link, '_blank');
 }
