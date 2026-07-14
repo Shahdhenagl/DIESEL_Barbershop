@@ -2495,9 +2495,15 @@ export default function POS() {
                   onClick={() => !isOutOfStock && handleAddProduct(product)}
                   className={`bg-white dark:bg-slate-800 p-4 rounded-3xl shadow-sm hover:shadow-xl cursor-pointer transition-all duration-300 transform hover:-translate-y-1 flex flex-col justify-between border border-gray-100 dark:border-slate-700 ring-1 ring-black/5 dark:ring-white/5 relative overflow-hidden group ${isOutOfStock ? 'opacity-60 cursor-not-allowed grayscale' : ''}`}
                 >
-                  <div className={`absolute top-0 right-0 rounded-bl-3xl rounded-tr-xl px-3 py-1 text-xs font-bold text-white shadow-sm transition-colors ${service ? 'bg-emerald-500' : isOutOfStock ? 'bg-slate-500' : isLowStock ? 'bg-red-500' : 'bg-green-500 dark:bg-green-600'}`}>
+                  <div className={`absolute top-0 right-0 z-10 rounded-bl-3xl rounded-tr-xl px-3 py-1 text-xs font-bold text-white shadow-sm transition-colors ${service ? 'bg-emerald-500' : isOutOfStock ? 'bg-slate-500' : isLowStock ? 'bg-red-500' : 'bg-green-500 dark:bg-green-600'}`}>
                     {service ? 'خدمة' : isOutOfStock ? 'نفذت' : formatQty(product.stock_quantity, product.unit)}
                   </div>
+
+                  {(product as any).image_url && (
+                    <div className="-mt-4 -mx-4 mb-2 h-28 overflow-hidden bg-slate-100 dark:bg-slate-900">
+                      <img src={(product as any).image_url} alt={product.name} loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                    </div>
+                  )}
 
                   <div className="pt-2">
                     <h3 className="font-bold text-gray-800 dark:text-gray-100 line-clamp-2 leading-tight text-base">{product.name}</h3>

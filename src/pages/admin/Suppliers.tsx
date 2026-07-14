@@ -3,6 +3,7 @@ import { useStore } from '../../store/useStore';
 import type { PurchaseItem, Product } from '../../store/useStore';
 import { Users, Search, Plus, Edit2, Trash2, Phone, MapPin, Calendar, ShoppingCart, FileText, X, ChevronDown, Printer, Eye, Download } from 'lucide-react';
 import { normalizeArabic } from '../../utils/textUtils';
+import { fileToThumbnailDataUrl } from '../../utils/imageUpload';
 import { UNIT_OPTIONS, getUnitConfig, isFractionalUnit, formatQty } from '../../utils/units';
 import { escapeHtml } from '../../utils/escapeHtml';
 import { openPrintWindow } from '../../utils/printWindow';
@@ -150,7 +151,7 @@ export default function Suppliers() {
   // Quick Add Product State
   const [showQuickProductModal, setShowQuickProductModal] = useState(false);
   const [quickProductIndex, setQuickProductIndex] = useState<number | null>(null);
-  const [quickProductData, setQuickProductData] = useState({ name: '', category_id: '', sale_price: '', barcode: '', unit: 'قطعة' });
+  const [quickProductData, setQuickProductData] = useState({ name: '', category_id: '', sale_price: '', barcode: '', unit: 'قطعة', image_url: '' });
   const { categories, addProduct } = useStore();
 
   const filteredSuppliers = suppliers.filter(s =>
@@ -274,9 +275,10 @@ export default function Suppliers() {
         purchase_price: 0,
         stock_quantity: 0,
         average_purchase_price: 0,
-        unit: quickProductData.unit || 'قطعة'
+        unit: quickProductData.unit || 'قطعة',
+        ...(quickProductData.image_url ? { image_url: quickProductData.image_url } : {})
       };
-      
+
       const createdProduct = await addProduct(newProd);
       
       // Try to find it in store as fallback just in case
@@ -290,7 +292,7 @@ export default function Suppliers() {
       }
       
       setShowQuickProductModal(false);
-      setQuickProductData({ name: '', category_id: '', sale_price: '', barcode: '', unit: 'قطعة' });
+      setQuickProductData({ name: '', category_id: '', sale_price: '', barcode: '', unit: 'قطعة', image_url: '' });
     } catch (err) {
       alert('خطأ في إضافة المنتج');
     } finally {
@@ -1085,6 +1087,29 @@ export default function Suppliers() {
               <button onClick={() => setShowQuickProductModal(false)} className="p-2 hover:bg-slate-200 rounded-xl transition"><X size={18} /></button>
             </div>
             <form onSubmit={handleQuickProductSubmit} className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1">صورة المنتج <span className="text-slate-400 font-normal">(اختياري — تظهر في الكاشير)</span></label>
+                <div className="flex items-center gap-3">
+                  <div className="w-16 h-16 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 overflow-hidden flex items-center justify-center shrink-0">
+                    {quickProductData.image_url
+                      ? <img src={quickProductData.image_url} alt="" className="w-full h-full object-cover" />
+                      : <span className="text-[9px] text-slate-400">لا صورة</span>}
+                  </div>
+                  <label className="cursor-pointer bg-indigo-50 text-indigo-700 font-bold text-xs px-3 py-2 rounded-xl hover:bg-indigo-100 transition inline-flex items-center gap-1.5">
+                    <Plus size={14} /> {quickProductData.image_url ? 'تغيير' : 'رفع صورة'}
+                    <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      try { const url = await fileToThumbnailDataUrl(file); setQuickProductData((d) => ({ ...d, image_url: url })); }
+                      catch { alert('تعذّر معالجة الصورة'); }
+                      e.target.value = '';
+                    }} />
+                  </label>
+                  {quickProductData.image_url && (
+                    <button type="button" onClick={() => setQuickProductData({ ...quickProductData, image_url: '' })} className="text-red-500 text-xs font-bold hover:underline">إزالة</button>
+                  )}
+                </div>
+              </div>
               <div>
                 <label className="block text-xs font-bold text-slate-500 mb-1">اسم المنتج</label>
                 <input required type="text" value={quickProductData.name} onChange={e => setQuickProductData({...quickProductData, name: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold" />

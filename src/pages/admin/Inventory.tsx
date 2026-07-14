@@ -4,6 +4,7 @@ import { Plus, Edit2, EyeOff, Eye, Search, X, Tag, FileText, Table as TableIcon,
 import { normalizeArabic } from '../../utils/textUtils';
 import { UNIT_OPTIONS, getUnitConfig, isFractionalUnit, formatQty } from '../../utils/units';
 import { generateBarcode, printBarcodeLabels } from '../../utils/printBarcodeLabels';
+import { fileToThumbnailDataUrl } from '../../utils/imageUpload';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 // html2canvas-pro يدعم ألوان oklch() في Tailwind v4 (النسخة الأصلية تفشل معها وتكسر تصدير PDF).
@@ -74,7 +75,8 @@ export default function Inventory() {
     stock_quantity: 0,
     display_quantity: 0,
     category_id: categories[0]?.id || '',
-    unit: 'قطعة'
+    unit: 'قطعة',
+    image_url: ''
   });
 
   // الكمية حسب المخزن المختار: الكل = الإجمالي، المعرض = المعروض، المستودع = الباقي.
@@ -183,7 +185,8 @@ export default function Inventory() {
       stock_quantity: product.stock_quantity,
       display_quantity: product.display_quantity || 0,
       category_id: product.category_id,
-      unit: product.unit || 'قطعة'
+      unit: product.unit || 'قطعة',
+      image_url: (product as any).image_url || ''
     });
     setShowAddModal(true);
   };
@@ -203,7 +206,8 @@ export default function Inventory() {
       stock_quantity: 0,
       display_quantity: 0,
       category_id: categories[0]?.id || '',
-      unit: 'قطعة'
+      unit: 'قطعة',
+      image_url: ''
     });
     setWarehouseQty(0);
     setShowAddModal(true);
@@ -285,7 +289,8 @@ export default function Inventory() {
       stock_quantity: 0,
       display_quantity: 0,
       category_id: categories[0]?.id || '',
-      unit: 'قطعة'
+      unit: 'قطعة',
+      image_url: ''
     });
     setWarehouseQty(0);
   };
@@ -461,6 +466,31 @@ export default function Inventory() {
                   {formData.type === 'service' && (
                     <p className="text-xs text-emerald-600 mt-1 font-bold">الخدمة بلا كمية (متاحة دائماً) وبلا سعر شراء — تُدخِل سعر تقديم الخدمة فقط.</p>
                   )}
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-sm font-bold text-slate-700 mb-1">صورة {formData.type === 'service' ? 'الخدمة' : 'المنتج'} <span className="text-slate-400 font-normal">(اختياري — تظهر في الكاشير)</span></label>
+                  <div className="flex items-center gap-3">
+                    <div className="w-20 h-20 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 overflow-hidden flex items-center justify-center shrink-0">
+                      {formData.image_url
+                        ? <img src={formData.image_url} alt="" className="w-full h-full object-cover" />
+                        : <span className="text-[10px] text-slate-400 text-center px-1">لا توجد صورة</span>}
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <label className="cursor-pointer bg-indigo-50 text-indigo-700 font-bold text-sm px-4 py-2 rounded-xl hover:bg-indigo-100 transition inline-flex items-center gap-2 w-fit">
+                        <Plus size={16} /> {formData.image_url ? 'تغيير الصورة' : 'رفع / التقاط صورة'}
+                        <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          try { const url = await fileToThumbnailDataUrl(file); setFormData((f) => ({ ...f, image_url: url })); }
+                          catch { alert('تعذّر معالجة الصورة، جرّبي صورة أخرى.'); }
+                          e.target.value = '';
+                        }} />
+                      </label>
+                      {formData.image_url && (
+                        <button type="button" onClick={() => setFormData({ ...formData, image_url: '' })} className="text-red-500 text-xs font-bold hover:underline w-fit">إزالة الصورة</button>
+                      )}
+                    </div>
+                  </div>
                 </div>
                 <div className="sm:col-span-2">
                   <label className="block text-sm font-bold text-slate-700 mb-1">اسم {formData.type === 'service' ? 'الخدمة' : 'المنتج'} <span className="text-red-500">*</span></label>
