@@ -10,10 +10,11 @@ import { ALL_PAYMENT_KEYS, activePaymentKeys, payLabelOf } from '../utils/paymen
 import { getUnitConfig, isFractionalUnit, formatQty } from '../utils/units';
 import { escapeHtml } from '../utils/escapeHtml';
 import { printDocument } from '../utils/printWindow';
+import { printQuotation } from '../utils/printQuotation';
 
 
 export default function POS() {
-  const { products, categories, cart, addToCart, addToCartQty, removeFromCart, updateQuantity, updatePrice, clearCart, checkout, processReturn, storeSettings, orders, activeInvoiceId, customers, activeCashier, logoutPOS, isOnline, offlineQueue, offlineReturnsQueue, isSyncing, syncOfflineQueue, syncOfflineReturnsQueue, addCashierNote, addExpense, invoiceType, setInvoiceType, employees, salespeople, setSalespeople, deleteOrder, savingsTransfer, addEmployeeTransaction, updateProduct, heldInvoices, holdInvoice, confirmHeldInvoice, returnHeldInvoice } = useStore();
+  const { products, categories, cart, addToCart, addToCartQty, removeFromCart, updateQuantity, updatePrice, clearCart, checkout, processReturn, storeSettings, orders, activeInvoiceId, customers, activeCashier, logoutPOS, isOnline, offlineQueue, offlineReturnsQueue, isSyncing, syncOfflineQueue, syncOfflineReturnsQueue, addCashierNote, addExpense, invoiceType, setInvoiceType, employees, salespeople, setSalespeople, deleteOrder, savingsTransfer, addEmployeeTransaction, updateProduct, heldInvoices, holdInvoice, confirmHeldInvoice, returnHeldInvoice, saveQuotation } = useStore();
   // Transfer day-closing balance to savings (with manager OTP)
   const [showSaveXfer, setShowSaveXfer] = useState(false);
   const [saveXfer, setSaveXfer] = useState<Record<string, string>>({ cash: '', visa: '', wallet: '', instapay: '' });
@@ -1051,6 +1052,45 @@ export default function POS() {
 </body></html>`;
 
     void printDocument('invoice', html);
+  };
+
+  // ── عرض سعر (Quotation) — لا يخصم من المخزون ولا يعمل بيع ──
+  const [showQuotationModal, setShowQuotationModal] = useState(false);
+  const [quotationBusy, setQuotationBusy] = useState(false);
+  const defaultIntro = `تحية طيبة وبعد،،\nيسعد ${storeSettings.name || 'شركتنا'} أن تتقدّم لسيادتكم بعرض السعر التالي، آملين أن ينال ثقتكم ورضاكم. ونحن على أتمّ الاستعداد لتنفيذ طلبكم بأعلى جودة وفي الموعد المتفق عليه.`;
+  const [quote, setQuote] = useState({ company: '', phone: '', period: '', notes: '', intro: '' });
+
+  const handleSaveQuotation = async () => {
+    if (cart.length === 0) return;
+    setQuotationBusy(true);
+    const items = cart.map((it) => ({
+      name: it.name,
+      quantity: Number(it.quantity) || 0,
+      unit_price: Number(it.sale_price) || 0,
+      total: (Number(it.quantity) || 0) * (Number(it.sale_price) || 0),
+    }));
+    const subtotal = items.reduce((s, it) => s + it.total, 0);
+    const number = `QT-${Date.now().toString().slice(-8)}`;
+    const payload = {
+      quotation_number: number,
+      recipient_company: quote.company.trim(),
+      recipient_phone: quote.phone.trim(),
+      intro_text: (quote.intro || defaultIntro).trim(),
+      notes: quote.notes.trim(),
+      execution_period: quote.period.trim(),
+      items,
+      subtotal,
+      discount: 0,
+      total: subtotal,
+      cashier_name: activeCashier?.name || 'مدير النظام',
+    };
+    const saved = await saveQuotation(payload as any);
+    setQuotationBusy(false);
+    if (saved) {
+      printQuotation({ ...payload, created_at: saved.created_at } as any, storeSettings as any);
+      setShowQuotationModal(false);
+      setQuote({ company: '', phone: '', period: '', notes: '', intro: '' });
+    }
   };
 
   // Opens payment method modal before checkout
@@ -2841,11 +2881,65 @@ export default function POS() {
             <PauseCircle size={18} /> {holdBusy ? 'جاري الحفظ...' : 'حفظ كفاتورة معلقة'}
           </button>
           )}
+          <button
+            onClick={() => setShowQuotationModal(true)}
+            disabled={cart.length === 0}
+            className="w-full mt-2 bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 hover:bg-purple-100 disabled:opacity-40 disabled:cursor-not-allowed py-3 rounded-2xl font-black flex items-center justify-center gap-2 transition-all text-sm active:scale-95 border border-purple-100 dark:border-purple-900/30"
+          >
+            <FileText size={18} /> إنشاء عرض سعر (لا يخصم من المخزون)
+          </button>
           <button onClick={clearCart} className="w-full text-slate-400 hover:text-red-500 text-xs font-bold py-3 transition-colors">
             إلغاء الطلب والتفريغ
           </button>
         </div>
       </div>
+      {/* Quotation Modal — عرض سعر */}
+      {showQuotationModal && (
+        <div className="fixed inset-0 z-[160] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-800 rounded-[28px] shadow-2xl w-full max-w-lg max-h-[92vh] overflow-y-auto border border-white/20">
+            <div className="p-5 border-b border-gray-100 dark:border-slate-700 flex justify-between items-center bg-purple-50/60 dark:bg-purple-900/20 sticky top-0">
+              <h2 className="font-black text-lg flex items-center gap-2 text-purple-700 dark:text-purple-300"><FileText size={20} /> إنشاء عرض سعر</h2>
+              <button onClick={() => setShowQuotationModal(false)} className="hover:bg-slate-200 dark:hover:bg-slate-700 p-1.5 rounded-lg"><X size={20} /></button>
+            </div>
+            <div className="p-5 space-y-3">
+              <div className="bg-purple-50 dark:bg-purple-900/20 rounded-xl p-3 text-[12px] font-bold text-purple-700 dark:text-purple-300">
+                🧾 الأصناف الحالية في السلة ({cart.length}) هتتضاف للعرض — <span className="underline">لا يتم خصم أي مخزون ولا تسجيل بيع</span>.
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 block mb-1">اسم الشركة المرسل إليها <span className="text-red-500">*</span></label>
+                <input value={quote.company} onChange={(e) => setQuote({ ...quote, company: e.target.value })} placeholder="مثلاً: شركة النور للمقاولات" className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-2.5 font-bold text-sm outline-none focus:ring-2 focus:ring-purple-400" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">رقم الهاتف</label>
+                  <input value={quote.phone} onChange={(e) => setQuote({ ...quote, phone: e.target.value })} dir="ltr" placeholder="01xxxxxxxxx" className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-2.5 font-bold text-sm outline-none focus:ring-2 focus:ring-purple-400 text-right" />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">مدة التنفيذ</label>
+                  <input value={quote.period} onChange={(e) => setQuote({ ...quote, period: e.target.value })} placeholder="مثلاً: 15 يوم عمل" className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-2.5 font-bold text-sm outline-none focus:ring-2 focus:ring-purple-400" />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 block mb-1">ملاحظات</label>
+                <textarea value={quote.notes} onChange={(e) => setQuote({ ...quote, notes: e.target.value })} rows={2} placeholder="أي شروط أو ملاحظات إضافية..." className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-2.5 font-bold text-sm outline-none focus:ring-2 focus:ring-purple-400 resize-none" />
+              </div>
+              <details className="bg-slate-50 dark:bg-slate-900/40 rounded-xl p-3">
+                <summary className="text-xs font-bold text-slate-500 cursor-pointer">مقدمة الخطاب (اضغط للتعديل)</summary>
+                <textarea value={quote.intro} onChange={(e) => setQuote({ ...quote, intro: e.target.value })} rows={4} placeholder={defaultIntro} className="w-full mt-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2 text-[13px] leading-relaxed outline-none focus:ring-2 focus:ring-purple-400 resize-none" />
+                <p className="text-[10px] text-slate-400 mt-1">لو سيبتها فاضية هتتحط المقدمة الافتراضية.</p>
+              </details>
+              <div className="flex justify-between items-center bg-slate-100 dark:bg-slate-900/50 rounded-xl px-4 py-3">
+                <span className="text-sm font-bold text-slate-500">إجمالي العرض</span>
+                <span className="text-xl font-black text-purple-700 dark:text-purple-300">{cart.reduce((s, it) => s + (Number(it.quantity) || 0) * (Number(it.sale_price) || 0), 0).toLocaleString()} {storeSettings.currency}</span>
+              </div>
+              <button onClick={handleSaveQuotation} disabled={quotationBusy || cart.length === 0 || !quote.company.trim()} className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 disabled:opacity-40 text-white font-black py-3.5 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-purple-500/20 active:scale-95 transition">
+                <Printer size={18} /> {quotationBusy ? 'جاري الحفظ...' : 'حفظ وطباعة العرض (A4)'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Checkout Payment Modal */}
       {showCheckoutModal && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">

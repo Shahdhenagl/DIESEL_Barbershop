@@ -441,6 +441,24 @@ export interface InstallmentPlanInput {
   note?: string;
 }
 
+// ─── عروض الأسعار ─────────────────────────────────────────────
+export interface QuotationItem { name: string; quantity: number; unit_price: number; total: number; }
+export interface Quotation {
+  id: string;
+  quotation_number: string;
+  recipient_company?: string;
+  recipient_phone?: string;
+  intro_text?: string;
+  notes?: string;
+  execution_period?: string;
+  items: QuotationItem[];
+  subtotal: number;
+  discount: number;
+  total: number;
+  cashier_name?: string;
+  created_at?: string;
+}
+
 // ─── Store Interface ──────────────────────────────────────────
 interface CashierStore {
   storeSettings: StoreSettings;
@@ -475,6 +493,10 @@ interface CashierStore {
   maintenanceAppointments: MaintenanceAppointment[];
 
   // Data loading
+  quotations: Quotation[];
+  loadQuotations: () => Promise<void>;
+  saveQuotation: (q: Omit<Quotation, 'id' | 'created_at'>) => Promise<Quotation | null>;
+  deleteQuotation: (id: string) => Promise<void>;
   installmentPlans: InstallmentPlan[];
   installments: Installment[];
   loadInstallments: () => Promise<void>;
@@ -838,6 +860,7 @@ export const useStore = create<CashierStore>((set, get) => ({
   salespeople: [],
   setSalespeople: (sp) => set({ salespeople: sp }),
   orders: [],
+  quotations: [],
   installmentPlans: [],
   installments: [],
   expenses: [],
@@ -1113,6 +1136,7 @@ export const useStore = create<CashierStore>((set, get) => ({
 
       // الأقساط: تحميل منفصل (لا يكسر loadAll لو الجدول لسه مش موجود قبل migration db/27)
       get().loadInstallments();
+      get().loadQuotations();
 
       // Fetch expenses separately to avoid breaking the whole loadAll if the table is missing
       try {
@@ -2009,6 +2033,46 @@ export const useStore = create<CashierStore>((set, get) => ({
       alert("حدث خطأ أثناء سداد المديونية.");
       return null;
     }
+  },
+
+  // ── عروض الأسعار ─────────────────────────────────────────────
+  loadQuotations: async () => {
+    try {
+      const { data, error } = await supabase.from('quotations').select('*').order('created_at', { ascending: false });
+      if (error) return; // الجدول لسه مش موجود (قبل migration) → تجاهل
+      set({ quotations: (data ?? []).map((q: any) => ({ ...q, items: Array.isArray(q.items) ? q.items : [] })) as Quotation[] });
+    } catch { /* تجاهل */ }
+  },
+
+  saveQuotation: async (q) => {
+    try {
+      const { data, error } = await supabase.from('quotations').insert({
+        quotation_number: q.quotation_number,
+        recipient_company: q.recipient_company || null,
+        recipient_phone: q.recipient_phone || null,
+        intro_text: q.intro_text || null,
+        notes: q.notes || null,
+        execution_period: q.execution_period || null,
+        items: q.items,
+        subtotal: q.subtotal,
+        discount: q.discount || 0,
+        total: q.total,
+        cashier_name: q.cashier_name || null,
+      }).select().single();
+      if (error) throw error;
+      const saved = { ...(data as any), items: Array.isArray((data as any).items) ? (data as any).items : q.items } as Quotation;
+      set((s) => ({ quotations: [saved, ...s.quotations] }));
+      return saved;
+    } catch (err: any) {
+      console.error('saveQuotation error:', err);
+      alert('تعذّر حفظ عرض السعر: ' + (err?.message || '') + '\n(تأكدي إنك شغّلتِ migration db/28_quotations.sql)');
+      return null;
+    }
+  },
+
+  deleteQuotation: async (id) => {
+    await supabase.from('quotations').delete().eq('id', id);
+    set((s) => ({ quotations: s.quotations.filter((q) => q.id !== id) }));
   },
 
   // ── التقسيط ──────────────────────────────────────────────────

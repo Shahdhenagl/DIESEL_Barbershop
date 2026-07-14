@@ -54,6 +54,7 @@ export default function AdminLayout() {
       { name: 'التقارير وكشوف الحساب', path: '/admin/reports', icon: FileBarChart },
     ]},
     { section: 'المبيعات والفواتير', items: [
+      { name: 'عروض الأسعار', path: '/admin/quotations', icon: FileText },
       { name: 'الفواتير والمرتجعات', path: '/admin/invoices', icon: FileText },
       { name: 'الفواتير الأوفلاين', path: '/admin/offline-invoices', icon: WifiOff },
       { name: 'كوبونات الخصم', path: '/admin/coupons', icon: Ticket },
