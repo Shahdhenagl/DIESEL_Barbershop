@@ -14,7 +14,7 @@ import { printQuotation, sendQuotationWhatsApp } from '../utils/printQuotation';
 
 
 export default function POS() {
-  const { products, categories, cart, addToCart, addToCartQty, removeFromCart, updateQuantity, updatePrice, clearCart, checkout, processReturn, storeSettings, orders, activeInvoiceId, customers, activeCashier, logoutPOS, isOnline, offlineQueue, offlineReturnsQueue, isSyncing, syncOfflineQueue, syncOfflineReturnsQueue, addCashierNote, addExpense, invoiceType, setInvoiceType, employees, salespeople, setSalespeople, deleteOrder, savingsTransfer, addEmployeeTransaction, updateProduct, heldInvoices, holdInvoice, confirmHeldInvoice, returnHeldInvoice, saveQuotation, addCustomer } = useStore();
+  const { products, categories, cart, addToCart, addToCartQty, removeFromCart, updateQuantity, updatePrice, clearCart, checkout, processReturn, storeSettings, orders, activeInvoiceId, customers, activeCashier, logoutPOS, isOnline, offlineQueue, offlineReturnsQueue, isSyncing, syncOfflineQueue, syncOfflineReturnsQueue, addCashierNote, addExpense, invoiceType, setInvoiceType, employees, salespeople, setSalespeople, deleteOrder, savingsTransfer, addEmployeeTransaction, updateProduct, heldInvoices, holdInvoice, confirmHeldInvoice, returnHeldInvoice, saveQuotation, addCustomer, createInstallmentPlan } = useStore();
   // Transfer day-closing balance to savings (with manager OTP)
   const [showSaveXfer, setShowSaveXfer] = useState(false);
   const [saveXfer, setSaveXfer] = useState<Record<string, string>>({ cash: '', visa: '', wallet: '', instapay: '' });
@@ -1060,6 +1060,11 @@ export default function POS() {
   const defaultIntro = `تحية طيبة وبعد،،\nيسعد ${storeSettings.name || 'شركتنا'} أن تتقدّم لسيادتكم بعرض السعر التالي، آملين أن ينال ثقتكم ورضاكم. ونحن على أتمّ الاستعداد لتنفيذ طلبكم بأعلى جودة وفي الموعد المتفق عليه.`;
   const [quote, setQuote] = useState({ company: '', phone: '', period: '', notes: '', intro: '' });
 
+  // ── بيع بالتقسيط (من الكاشير) ──
+  const [showInstallmentModal, setShowInstallmentModal] = useState(false);
+  const [instBusy, setInstBusy] = useState(false);
+  const [inst, setInst] = useState({ name: '', phone: '', down: '', method: 'cash', count: '4', intervalType: 'monthly' as 'monthly' | 'quarterly' | 'custom', intervalDays: '30', interestType: 'none' as 'none' | 'percent' | 'fixed', interestValue: '', firstDue: '' });
+
   const handleSaveQuotation = async (action: 'print' | 'whatsapp') => {
     if (cart.length === 0) return;
     if (!quote.company.trim()) { alert('اكتبي اسم الشركة / العميل المرسل إليه'); return; }
@@ -1351,6 +1356,49 @@ export default function POS() {
   const discountedSubtotal = Math.max(0, subtotal - totalDiscount);
   const tax = discountedSubtotal * (storeSettings.taxRate / 100);
   const total = discountedSubtotal + tax;
+
+  // بيع بالتقسيط: بيع آجل بمقدم + إنشاء خطة تقسيط تلقائياً على الفاتورة.
+  const openInstallmentModal = () => {
+    if (cart.length === 0) return;
+    setInst((s) => ({ ...s, name: customerName || s.name, phone: customerPhone || s.phone }));
+    setShowInstallmentModal(true);
+  };
+  const handleInstallmentSale = async () => {
+    if (cart.length === 0) return;
+    if (!inst.name.trim() || !inst.phone.trim()) { alert('لازم اسم العميل ورقمه للبيع بالتقسيط'); return; }
+    const down = parseFloat(inst.down) || 0;
+    const count = Math.max(1, parseInt(inst.count) || 1);
+    if (down >= total) { alert('المقدم لازم يكون أقل من إجمالي الفاتورة (عشان يتبقّى مبلغ يتقسّط)'); return; }
+    setInstBusy(true);
+    try {
+      const split: Record<string, number> = {};
+      activePayKeys.forEach((k) => { split[k] = 0; });
+      if (down > 0) split[inst.method] = down;
+      const primaryMethod = down > 0 ? inst.method : 'cash';
+      // 1) البيع (آجل بمقدم) — بيخصم المخزون زي أي بيع
+      const invoiceId = await checkout(total, { name: inst.name.trim(), phone: inst.phone.trim() }, down, 'sale', primaryMethod as any, split as any, undefined, `بيع بالتقسيط (${count} دفعات)`);
+      if (!invoiceId) { setInstBusy(false); alert('تعذّر إتمام البيع'); return; }
+      // 2) إنشاء خطة التقسيط على الفاتورة
+      const ok = await createInstallmentPlan(String(invoiceId), {
+        installments_count: count,
+        interval_type: inst.intervalType,
+        interval_days: inst.intervalType === 'custom' ? Math.max(1, parseInt(inst.intervalDays) || 30) : undefined,
+        interest_type: inst.interestType,
+        interest_value: parseFloat(inst.interestValue) || 0,
+        first_due_date: inst.firstDue || undefined,
+        note: `بيع بالتقسيط من الكاشير`,
+      });
+      setInstBusy(false);
+      if (ok) {
+        alert('تم البيع بالتقسيط وإنشاء جدول الأقساط ✅\nتقدري تتابعي التحصيل من «الأقساط والتحصيل».');
+        setShowInstallmentModal(false);
+        setInst({ name: '', phone: '', down: '', method: 'cash', count: '4', intervalType: 'monthly', intervalDays: '30', interestType: 'none', interestValue: '', firstDue: '' });
+      }
+    } catch (e: any) {
+      setInstBusy(false);
+      alert('حدث خطأ: ' + (e?.message || ''));
+    }
+  };
   const profit = discountedSubtotal - totalCost;
 
 
@@ -2898,6 +2946,13 @@ export default function POS() {
           >
             <FileText size={18} /> إنشاء عرض سعر (لا يخصم من المخزون)
           </button>
+          <button
+            onClick={openInstallmentModal}
+            disabled={cart.length === 0 || pricesHidden}
+            className="w-full mt-2 bg-teal-50 dark:bg-teal-900/20 text-teal-600 dark:text-teal-400 hover:bg-teal-100 disabled:opacity-40 disabled:cursor-not-allowed py-3 rounded-2xl font-black flex items-center justify-center gap-2 transition-all text-sm active:scale-95 border border-teal-100 dark:border-teal-900/30"
+          >
+            <CreditCard size={18} /> بيع بالتقسيط (مقدم + دفعات)
+          </button>
           <button onClick={clearCart} className="w-full text-slate-400 hover:text-red-500 text-xs font-bold py-3 transition-colors">
             إلغاء الطلب والتفريغ
           </button>
@@ -2962,6 +3017,94 @@ export default function POS() {
           </div>
         </div>
       )}
+
+      {/* Installment Sale Modal — بيع بالتقسيط */}
+      {showInstallmentModal && (() => {
+        const down = parseFloat(inst.down) || 0;
+        const financed = Math.max(0, total - down);
+        const interestAmt = inst.interestType === 'percent' ? financed * (parseFloat(inst.interestValue) || 0) / 100 : inst.interestType === 'fixed' ? (parseFloat(inst.interestValue) || 0) : 0;
+        const totalDue = financed + interestAmt;
+        const n = Math.max(1, parseInt(inst.count) || 1);
+        const per = totalDue / n;
+        const fld = 'w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2.5 font-bold text-sm outline-none focus:ring-2 focus:ring-teal-400';
+        return (
+        <div className="fixed inset-0 z-[160] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white dark:bg-slate-800 rounded-[28px] shadow-2xl w-full max-w-lg max-h-[92vh] overflow-y-auto border border-white/20">
+            <div className="p-5 border-b border-gray-100 dark:border-slate-700 flex justify-between items-center bg-teal-50/60 dark:bg-teal-900/20 sticky top-0">
+              <h2 className="font-black text-lg flex items-center gap-2 text-teal-700 dark:text-teal-300"><CreditCard size={20} /> بيع بالتقسيط</h2>
+              <button onClick={() => setShowInstallmentModal(false)} className="hover:bg-slate-200 dark:hover:bg-slate-700 p-1.5 rounded-lg"><X size={20} /></button>
+            </div>
+            <div className="p-5 space-y-3">
+              <div className="bg-teal-50 dark:bg-teal-900/20 rounded-xl p-3 text-[12px] font-bold text-teal-700 dark:text-teal-300">إجمالي الفاتورة: {total.toLocaleString()} {storeSettings.currency} — بيع حقيقي (يخصم المخزون)، الباقي بعد المقدم بيتقسّط.</div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">اسم العميل <span className="text-red-500">*</span></label>
+                  <input list="inst-customers" value={inst.name} onChange={(e) => { const v = e.target.value; const mt = customers.find((c) => c.name === v); setInst({ ...inst, name: v, ...(mt ? { phone: mt.phone || '' } : {}) }); }} className={fld} placeholder="اسم العميل" />
+                  <datalist id="inst-customers">{customers.map((c) => <option key={c.id} value={c.name}>{c.phone}</option>)}</datalist>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">رقم الهاتف <span className="text-red-500">*</span></label>
+                  <input value={inst.phone} onChange={(e) => setInst({ ...inst, phone: e.target.value })} dir="ltr" className={fld + ' text-right'} placeholder="01xxxxxxxxx" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">المقدم (يُدفع الآن)</label>
+                  <input type="number" min="0" value={inst.down} onChange={(e) => setInst({ ...inst, down: e.target.value })} className={fld} placeholder="0" />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">طريقة دفع المقدم</label>
+                  <select value={inst.method} onChange={(e) => setInst({ ...inst, method: e.target.value })} className={fld}>
+                    {activePayKeys.map((k) => <option key={k} value={k}>{payLabelOf(storeSettings as any, k)}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">عدد الدفعات</label>
+                  <input type="number" min="1" value={inst.count} onChange={(e) => setInst({ ...inst, count: e.target.value })} className={fld} />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">فترة التقسيط</label>
+                  <select value={inst.intervalType} onChange={(e) => setInst({ ...inst, intervalType: e.target.value as any })} className={fld}>
+                    <option value="monthly">شهري</option>
+                    <option value="quarterly">ربع سنوي</option>
+                    <option value="custom">مخصص (أيام)</option>
+                  </select>
+                </div>
+                {inst.intervalType === 'custom' && (
+                  <div><label className="text-xs font-bold text-slate-500 block mb-1">أيام بين كل دفعة</label><input type="number" min="1" value={inst.intervalDays} onChange={(e) => setInst({ ...inst, intervalDays: e.target.value })} className={fld} /></div>
+                )}
+                <div>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">تاريخ أول قسط <span className="text-slate-400 font-normal">(اختياري)</span></label>
+                  <input type="date" value={inst.firstDue} onChange={(e) => setInst({ ...inst, firstDue: e.target.value })} className={fld} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">فايدة التقسيط</label>
+                  <select value={inst.interestType} onChange={(e) => setInst({ ...inst, interestType: e.target.value as any })} className={fld}>
+                    <option value="none">بدون</option><option value="percent">نسبة %</option><option value="fixed">مبلغ ثابت</option>
+                  </select>
+                </div>
+                {inst.interestType !== 'none' && (
+                  <div><label className="text-xs font-bold text-slate-500 block mb-1">{inst.interestType === 'percent' ? 'النسبة %' : 'المبلغ'}</label><input type="number" min="0" value={inst.interestValue} onChange={(e) => setInst({ ...inst, interestValue: e.target.value })} className={fld} /></div>
+                )}
+              </div>
+              <div className="bg-teal-50 dark:bg-teal-900/20 rounded-xl p-3 space-y-1 text-sm">
+                <div className="flex justify-between"><span className="text-slate-500 font-bold">المموّل بعد المقدم:</span><span className="font-black">{financed.toFixed(2)} {storeSettings.currency}</span></div>
+                {interestAmt > 0 && <div className="flex justify-between"><span className="text-slate-500 font-bold">الفايدة:</span><span className="font-black text-purple-600">+{interestAmt.toFixed(2)}</span></div>}
+                <div className="flex justify-between border-t border-teal-200 dark:border-teal-800 pt-1"><span className="text-slate-600 font-black">إجمالي التقسيط:</span><span className="font-black text-teal-700">{totalDue.toFixed(2)} {storeSettings.currency}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500 font-bold">قيمة كل قسط ({n}):</span><span className="font-black">{per.toFixed(2)} {storeSettings.currency}</span></div>
+              </div>
+              <button onClick={handleInstallmentSale} disabled={instBusy || cart.length === 0 || !inst.name.trim() || !inst.phone.trim()} className="w-full bg-gradient-to-r from-teal-600 to-cyan-600 disabled:opacity-40 text-white font-black py-3.5 rounded-2xl flex items-center justify-center gap-2 shadow-lg active:scale-95 transition">
+                <CreditCard size={18} /> {instBusy ? 'جاري...' : 'تأكيد البيع بالتقسيط'}
+              </button>
+            </div>
+          </div>
+        </div>
+        );
+      })()}
 
       {/* Checkout Payment Modal */}
       {showCheckoutModal && (
