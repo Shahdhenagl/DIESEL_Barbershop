@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../../store/useStore';
-import { FileText, Printer, Trash2, Search, Building2, Phone, Calendar } from 'lucide-react';
-import { printQuotation } from '../../utils/printQuotation';
+import { FileText, Printer, Trash2, Search, Building2, Phone, Calendar, MessageCircle, Download } from 'lucide-react';
+import { printQuotation, quotationToPdf, sendQuotationWhatsApp } from '../../utils/printQuotation';
 import { normalizeArabic } from '../../utils/textUtils';
 
 export default function Quotations() {
@@ -71,9 +71,20 @@ export default function Quotations() {
                 <div className="text-[12px] text-slate-500 mb-2">{(x.items || []).length} بند{x.execution_period ? ` · مدة التنفيذ: ${x.execution_period}` : ''}</div>
                 <div className="text-2xl font-black text-slate-800 dark:text-white">{(Number(x.total) || 0).toLocaleString()} <span className="text-sm font-bold text-slate-400">{cur}</span></div>
               </div>
-              <div className="p-3 border-t border-slate-100 dark:border-slate-700 flex gap-2">
-                <button onClick={() => reprint(x)} className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-black py-2.5 rounded-xl flex items-center justify-center gap-2 text-sm"><Printer size={16} /> طباعة A4</button>
-                <button onClick={() => remove(x)} className="bg-red-50 dark:bg-red-900/20 text-red-500 hover:bg-red-100 px-3 rounded-xl"><Trash2 size={16} /></button>
+              <div className="p-3 border-t border-slate-100 dark:border-slate-700 space-y-2">
+                <button
+                  onClick={() => sendQuotationWhatsApp(x as any, storeSettings as any)}
+                  disabled={!x.recipient_phone}
+                  className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black py-2.5 rounded-xl flex items-center justify-center gap-2 text-sm"
+                  title={x.recipient_phone ? 'إرسال العرض للعميل على واتساب' : 'لا يوجد رقم هاتف للعميل'}
+                >
+                  <MessageCircle size={16} /> إرسال / تواصل واتساب
+                </button>
+                <div className="flex gap-2">
+                  <button onClick={() => reprint(x)} className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 rounded-xl flex items-center justify-center gap-1.5 text-sm"><Printer size={15} /> طباعة</button>
+                  <button onClick={() => quotationToPdf(x as any, storeSettings as any)} className="flex-1 bg-slate-700 hover:bg-slate-800 text-white font-bold py-2.5 rounded-xl flex items-center justify-center gap-1.5 text-sm"><Download size={15} /> PDF</button>
+                  <button onClick={() => remove(x)} className="bg-red-50 dark:bg-red-900/20 text-red-500 hover:bg-red-100 px-3 rounded-xl"><Trash2 size={16} /></button>
+                </div>
               </div>
             </div>
           ))}

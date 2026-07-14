@@ -10,11 +10,11 @@ import { ALL_PAYMENT_KEYS, activePaymentKeys, payLabelOf } from '../utils/paymen
 import { getUnitConfig, isFractionalUnit, formatQty } from '../utils/units';
 import { escapeHtml } from '../utils/escapeHtml';
 import { printDocument } from '../utils/printWindow';
-import { printQuotation } from '../utils/printQuotation';
+import { printQuotation, sendQuotationWhatsApp } from '../utils/printQuotation';
 
 
 export default function POS() {
-  const { products, categories, cart, addToCart, addToCartQty, removeFromCart, updateQuantity, updatePrice, clearCart, checkout, processReturn, storeSettings, orders, activeInvoiceId, customers, activeCashier, logoutPOS, isOnline, offlineQueue, offlineReturnsQueue, isSyncing, syncOfflineQueue, syncOfflineReturnsQueue, addCashierNote, addExpense, invoiceType, setInvoiceType, employees, salespeople, setSalespeople, deleteOrder, savingsTransfer, addEmployeeTransaction, updateProduct, heldInvoices, holdInvoice, confirmHeldInvoice, returnHeldInvoice, saveQuotation } = useStore();
+  const { products, categories, cart, addToCart, addToCartQty, removeFromCart, updateQuantity, updatePrice, clearCart, checkout, processReturn, storeSettings, orders, activeInvoiceId, customers, activeCashier, logoutPOS, isOnline, offlineQueue, offlineReturnsQueue, isSyncing, syncOfflineQueue, syncOfflineReturnsQueue, addCashierNote, addExpense, invoiceType, setInvoiceType, employees, salespeople, setSalespeople, deleteOrder, savingsTransfer, addEmployeeTransaction, updateProduct, heldInvoices, holdInvoice, confirmHeldInvoice, returnHeldInvoice, saveQuotation, addCustomer } = useStore();
   // Transfer day-closing balance to savings (with manager OTP)
   const [showSaveXfer, setShowSaveXfer] = useState(false);
   const [saveXfer, setSaveXfer] = useState<Record<string, string>>({ cash: '', visa: '', wallet: '', instapay: '' });
@@ -1060,8 +1060,9 @@ export default function POS() {
   const defaultIntro = `تحية طيبة وبعد،،\nيسعد ${storeSettings.name || 'شركتنا'} أن تتقدّم لسيادتكم بعرض السعر التالي، آملين أن ينال ثقتكم ورضاكم. ونحن على أتمّ الاستعداد لتنفيذ طلبكم بأعلى جودة وفي الموعد المتفق عليه.`;
   const [quote, setQuote] = useState({ company: '', phone: '', period: '', notes: '', intro: '' });
 
-  const handleSaveQuotation = async () => {
+  const handleSaveQuotation = async (action: 'print' | 'whatsapp') => {
     if (cart.length === 0) return;
+    if (!quote.company.trim()) { alert('اكتبي اسم الشركة / العميل المرسل إليه'); return; }
     setQuotationBusy(true);
     const items = cart.map((it) => ({
       name: it.name,
@@ -1071,6 +1072,13 @@ export default function POS() {
     }));
     const subtotal = items.reduce((s, it) => s + it.total, 0);
     const number = `QT-${Date.now().toString().slice(-8)}`;
+    const phoneClean = quote.phone.replace(/\D/g, '');
+
+    // العميل المرسل إليه: لو رقمه مش موجود في قاعدة العملاء → نضيفه كعميل جديد.
+    if (phoneClean && !customers.some((c) => String(c.phone || '').replace(/\D/g, '') === phoneClean)) {
+      try { await addCustomer({ name: quote.company.trim(), phone: quote.phone.trim() } as any); } catch { /* تجاهل لو الرقم مكرر */ }
+    }
+
     const payload = {
       quotation_number: number,
       recipient_company: quote.company.trim(),
@@ -1087,7 +1095,9 @@ export default function POS() {
     const saved = await saveQuotation(payload as any);
     setQuotationBusy(false);
     if (saved) {
-      printQuotation({ ...payload, created_at: saved.created_at } as any, storeSettings as any);
+      const full = { ...payload, created_at: saved.created_at };
+      if (action === 'whatsapp') sendQuotationWhatsApp(full as any, storeSettings as any);
+      else printQuotation(full as any, storeSettings as any);
       setShowQuotationModal(false);
       setQuote({ company: '', phone: '', period: '', notes: '', intro: '' });
     }
@@ -2906,8 +2916,16 @@ export default function POS() {
                 🧾 الأصناف الحالية في السلة ({cart.length}) هتتضاف للعرض — <span className="underline">لا يتم خصم أي مخزون ولا تسجيل بيع</span>.
               </div>
               <div>
-                <label className="text-xs font-bold text-slate-500 block mb-1">اسم الشركة المرسل إليها <span className="text-red-500">*</span></label>
-                <input value={quote.company} onChange={(e) => setQuote({ ...quote, company: e.target.value })} placeholder="مثلاً: شركة النور للمقاولات" className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-2.5 font-bold text-sm outline-none focus:ring-2 focus:ring-purple-400" />
+                <label className="text-xs font-bold text-slate-500 block mb-1">الشركة / العميل المرسل إليه <span className="text-red-500">*</span></label>
+                <input list="quote-customers" value={quote.company} onChange={(e) => {
+                  const v = e.target.value;
+                  const match = customers.find((c) => c.name === v);
+                  setQuote({ ...quote, company: v, ...(match ? { phone: match.phone || '' } : {}) });
+                }} placeholder="اختاري من العملاء أو اكتبي اسم جديد..." className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-2.5 font-bold text-sm outline-none focus:ring-2 focus:ring-purple-400" />
+                <datalist id="quote-customers">
+                  {customers.map((c) => <option key={c.id} value={c.name}>{c.phone}</option>)}
+                </datalist>
+                <p className="text-[10px] text-slate-400 mt-1">لو عميل جديد (برقم جديد) هيتضاف تلقائياً لقاعدة العملاء.</p>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -2932,9 +2950,14 @@ export default function POS() {
                 <span className="text-sm font-bold text-slate-500">إجمالي العرض</span>
                 <span className="text-xl font-black text-purple-700 dark:text-purple-300">{cart.reduce((s, it) => s + (Number(it.quantity) || 0) * (Number(it.sale_price) || 0), 0).toLocaleString()} {storeSettings.currency}</span>
               </div>
-              <button onClick={handleSaveQuotation} disabled={quotationBusy || cart.length === 0 || !quote.company.trim()} className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 disabled:opacity-40 text-white font-black py-3.5 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-purple-500/20 active:scale-95 transition">
-                <Printer size={18} /> {quotationBusy ? 'جاري الحفظ...' : 'حفظ وطباعة العرض (A4)'}
-              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => handleSaveQuotation('print')} disabled={quotationBusy || cart.length === 0 || !quote.company.trim()} className="bg-gradient-to-r from-purple-600 to-indigo-600 disabled:opacity-40 text-white font-black py-3.5 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-purple-500/20 active:scale-95 transition text-sm">
+                  <Printer size={18} /> {quotationBusy ? 'جاري...' : 'حفظ وطباعة A4'}
+                </button>
+                <button onClick={() => handleSaveQuotation('whatsapp')} disabled={quotationBusy || cart.length === 0 || !quote.company.trim()} className="bg-gradient-to-r from-emerald-500 to-teal-500 disabled:opacity-40 text-white font-black py-3.5 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 active:scale-95 transition text-sm">
+                  <Send size={18} /> {quotationBusy ? 'جاري...' : 'حفظ وإرسال واتساب'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
