@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../../store/useStore';
-import { CalendarClock, AlertTriangle, Wallet, CheckCircle2, Clock, Plus, Receipt } from 'lucide-react';
+import { CalendarClock, AlertTriangle, Wallet, CheckCircle2, Clock, Plus, Receipt, MessageCircle, X } from 'lucide-react';
 import { activePaymentKeys, payLabelOf } from '../../utils/paymentMethods';
 
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -16,6 +16,55 @@ export default function Installments() {
   const today = ymd(new Date());
   const custName = (id: string) => customers.find((c) => c.id === id)?.name || 'عميل';
   const custPhone = (id: string) => customers.find((c) => c.id === id)?.phone || '';
+  const daysUntil = (due: string) => Math.round((new Date(due + 'T12:00:00').getTime() - new Date(today + 'T12:00:00').getTime()) / 86400000);
+
+  // ── تذكير واتساب للقسط ──
+  const [noteModal, setNoteModal] = useState<{ inst: any; insts: any[]; note: string } | null>(null);
+
+  const buildReminderMsg = (inst: any, insts: any[], note = '') => {
+    const name = custName(inst.customer_id);
+    const shop = storeSettings.name || 'المحل';
+    const paidSum = insts.filter((i) => i.paid).reduce((s, i) => s + (Number(i.amount) || 0), 0);
+    const remainingSum = insts.filter((i) => !i.paid).reduce((s, i) => s + (Number(i.amount) || 0), 0);
+    const totalDue = insts.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+    const nextUnpaid = [...insts].sort((a, b) => a.seq - b.seq).find((i) => !i.paid);
+    const d = daysUntil(inst.due_date);
+    const dueLine = d > 0 ? `متبقّي ${d} يوم على الاستحقاق` : d === 0 ? 'مستحق اليوم ⏰' : `⚠️ متأخّر ${-d} يوم عن موعده`;
+    let msg = `🔔 *تذكير قسط — ${shop}*\n`;
+    msg += `عزيزنا ${name} 🌟\n\n`;
+    msg += `بخصوص فاتورة التقسيط #${inst.order_id}:\n`;
+    msg += `• القسط رقم *${inst.seq}* من ${insts.length}\n`;
+    msg += `• قيمة القسط: *${(Number(inst.amount) || 0).toFixed(2)} ${cur}*\n`;
+    msg += `• تاريخ الاستحقاق: ${inst.due_date}\n`;
+    msg += `• ${dueLine}\n\n`;
+    msg += `📋 *ملخّص التقسيط:*\n`;
+    msg += `• إجمالي التقسيط: ${totalDue.toFixed(2)} ${cur}\n`;
+    msg += `• المُسدَّد: ${paidSum.toFixed(2)} ${cur}\n`;
+    msg += `• المتبقّي: ${remainingSum.toFixed(2)} ${cur}\n`;
+    if (nextUnpaid) {
+      const nd = daysUntil(nextUnpaid.due_date);
+      msg += `• التحصيل القادم: ${nextUnpaid.due_date} (${nd > 0 ? `بعد ${nd} يوم` : nd === 0 ? 'اليوم' : `متأخّر ${-nd} يوم`})\n`;
+    }
+    if (note.trim()) msg += `\n📝 ${note.trim()}\n`;
+    msg += `\nبرجاء التكرم بالسداد في موعده. شكراً لتعاملكم معنا 🙏\n${shop}${storeSettings.phone ? ` — ${storeSettings.phone}` : ''}`;
+    return msg;
+  };
+
+  const sendReminder = (inst: any, insts: any[], note = '') => {
+    const phone = custPhone(inst.customer_id);
+    if (!phone) { alert('لا يوجد رقم هاتف لهذا العميل.'); return; }
+    let clean = String(phone).replace(/\D/g, '');
+    const code = (storeSettings as any).whatsappCountryCode || '2';
+    if (clean.startsWith('0')) clean = code + clean.substring(1);
+    else if (!clean.startsWith(code)) clean = code + clean;
+    window.open(`https://wa.me/${clean}?text=${encodeURIComponent(buildReminderMsg(inst, insts, note))}`, '_blank');
+  };
+
+  // متأخّر → بوب أب ملاحظة (غرامة) قبل الإرسال؛ غير كده → إرسال مباشر.
+  const onReminderClick = (inst: any, insts: any[]) => {
+    if (daysUntil(inst.due_date) < 0) setNoteModal({ inst, insts, note: '' });
+    else sendReminder(inst, insts);
+  };
 
   // ── ملخّص ──
   const unpaid = installments.filter((i) => !i.paid);
@@ -185,6 +234,13 @@ export default function Installments() {
                         <span className={`text-[11px] font-black px-2.5 py-1 rounded-lg ${st.cls}`}>{st.label}</span>
                         {!inst.paid ? (
                           <>
+                            <button
+                              onClick={() => onReminderClick(inst, insts)}
+                              title={st.key === 'overdue' ? 'تذكير واتساب (قسط متأخّر — مع ملاحظة/غرامة)' : 'إرسال تذكير واتساب للعميل'}
+                              className={`p-1.5 rounded-lg transition ${st.key === 'overdue' ? 'bg-red-100 text-red-600 hover:bg-red-200' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}`}
+                            >
+                              <MessageCircle size={16} />
+                            </button>
                             <select value={collectMethod[inst.id] || 'cash'} onChange={(e) => setCollectMethod((m) => ({ ...m, [inst.id]: e.target.value }))} className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg px-2 py-1.5 text-xs font-bold">
                               {payKeys.map((k) => <option key={k} value={k}>{payLabelOf(storeSettings as any, k)}</option>)}
                             </select>
@@ -275,6 +331,32 @@ export default function Installments() {
               <button disabled={busy} onClick={handleCreate} className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-black py-3 rounded-xl">{busy ? 'جاري...' : 'إنشاء خطة التقسيط'}</button>
             </>
           )}
+        </div>
+      )}
+
+      {/* بوب أب تذكير القسط المتأخّر (مع ملاحظة/غرامة) */}
+      {noteModal && (
+        <div className="fixed inset-0 z-[160] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" onClick={() => setNoteModal(null)}>
+          <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl w-full max-w-md overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="p-5 border-b border-gray-100 dark:border-slate-700 flex justify-between items-center bg-red-50 dark:bg-red-900/20">
+              <h2 className="font-black text-lg flex items-center gap-2 text-red-600"><AlertTriangle size={20} /> قسط متأخّر — تذكير واتساب</h2>
+              <button onClick={() => setNoteModal(null)} className="hover:bg-slate-200 dark:hover:bg-slate-700 p-1.5 rounded-lg"><X size={20} /></button>
+            </div>
+            <div className="p-5 space-y-3">
+              <div className="text-sm">
+                <div className="font-black text-slate-800 dark:text-white">{custName(noteModal.inst.customer_id)}</div>
+                <div className="text-slate-500 text-[13px]">القسط رقم {noteModal.inst.seq} · {(Number(noteModal.inst.amount) || 0).toFixed(2)} {cur} · استحقاق {noteModal.inst.due_date}</div>
+                <div className="text-red-600 font-bold text-[13px] mt-1">⚠️ متأخّر {Math.abs(daysUntil(noteModal.inst.due_date))} يوم</div>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 block mb-1">ملاحظة تُضاف للرسالة (اختياري — مثلاً غرامة تأخير)</label>
+                <textarea value={noteModal.note} onChange={(e) => setNoteModal({ ...noteModal, note: e.target.value })} rows={3} placeholder="مثلاً: نظراً للتأخّر يُضاف غرامة تأخير 50 ج.م على القسط، برجاء السداد سريعاً." className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-red-300 resize-none" />
+              </div>
+              <button onClick={() => { sendReminder(noteModal.inst, noteModal.insts, noteModal.note); setNoteModal(null); }} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-3 rounded-xl flex items-center justify-center gap-2">
+                <MessageCircle size={18} /> إرسال التذكير على واتساب
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
