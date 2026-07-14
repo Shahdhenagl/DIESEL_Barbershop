@@ -43,6 +43,8 @@ const TYPE_LABELS = {
   partner_deposit: 'إيداع شريك',
   savings_in: 'تحويل لخزنة الادخار',
   savings_out: 'تحويل من خزنة الادخار',
+  quotation: '🧾 عرض سعر جديد',
+  installment_plan: '💳 بيع بالتقسيط — خطة جديدة',
 };
 
 function line(label, value) {

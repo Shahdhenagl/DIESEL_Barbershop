@@ -2065,6 +2065,17 @@ export const useStore = create<CashierStore>((set, get) => ({
       if (error) throw error;
       const saved = { ...(data as any), items: Array.isArray((data as any).items) ? (data as any).items : q.items } as Quotation;
       set((s) => ({ quotations: [saved, ...s.quotations] }));
+      sendTelegramAlert({
+        type: 'quotation',
+        actor: getActorName(get()),
+        currency: get().storeSettings.currency,
+        invoiceId: saved.quotation_number,
+        customer: q.recipient_company || 'عميل',
+        phone: q.recipient_phone || undefined,
+        total: q.total,
+        description: `عرض سعر — ${q.items.length} بند${q.execution_period ? ` · مدة التنفيذ: ${q.execution_period}` : ''}`,
+        date: new Date().toISOString(),
+      });
       return saved;
     } catch (err: any) {
       console.error('saveQuotation error:', err);
@@ -2160,6 +2171,18 @@ export const useStore = create<CashierStore>((set, get) => ({
       if (instErr) throw instErr;
 
       await get().loadInstallments();
+      sendTelegramAlert({
+        type: 'installment_plan',
+        actor: getActorName(get()),
+        currency: get().storeSettings.currency,
+        invoiceId: orderId,
+        customer: state.customers.find((c) => c.id === customerId)?.name || 'عميل',
+        total: totalDue,
+        paid: downPayment,
+        description: `بيع بالتقسيط — ${count} دفعات${interestAmount > 0.001 ? ` · فايدة ${interestAmount.toFixed(2)}` : ''} · أول قسط: ${rows[0]?.due_date || ''}`,
+        dueDate: rows[0]?.due_date,
+        date: new Date().toISOString(),
+      });
       return true;
     } catch (err: any) {
       console.error('createInstallmentPlan error:', err);
