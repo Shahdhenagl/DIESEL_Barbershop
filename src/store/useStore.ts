@@ -536,7 +536,8 @@ interface CashierStore {
     amount: number, 
     splitPayments?: { cash: number; visa: number; wallet: number; instapay: number; method5?: number; method6?: number },
     paymentMethod?: string,
-    discount?: number
+    discount?: number,
+    label?: string
   ) => Promise<string | null | void>;
   processReturn: (orderId: string, returns: { productId: string, returnQty: number, refundAmount: number, debtDeduction?: number }[], refundMethod?: string) => Promise<boolean>;
   deleteOrder: (orderId: string, reason?: string) => Promise<boolean>;
@@ -1952,7 +1953,7 @@ export const useStore = create<CashierStore>((set, get) => ({
   },
 
   // ── Returns ────────────────────────────────────────────────
-  payInvoiceDebt: async (invoiceId, customerId, amount, splitPayments, paymentMethod = 'cash', discount = 0) => {
+  payInvoiceDebt: async (invoiceId, customerId, amount, splitPayments, paymentMethod = 'cash', discount = 0, label = '') => {
     const state = get();
     const invoice = state.orders.find(o => o.id === invoiceId);
     if (!invoice) return;
@@ -1986,7 +1987,9 @@ export const useStore = create<CashierStore>((set, get) => ({
       const cashierName = state.activeCashier?.name || 'مدير النظام';
       const remainingDebt = invoice.total - newPaidAmount;
       const debtBefore = remainingDebt + totalReduction;
-      const note = `سداد أجل للفاتورة رقم #${invoiceId}${invoice.notes ? ` | الوصف: ${invoice.notes}` : ''} | المديونية قبل: ${debtBefore.toFixed(2)} | المتبقي: ${remainingDebt.toFixed(2)}${discount > 0 ? ` | خصم/إكرامية: ${discount.toFixed(2)}` : ''}`;
+      // نُبقي «سداد أجل للفاتورة رقم #{id}» كما هي (يعتمد عليها توزيع/كشف المدفوعات)،
+      // ونضيف label اختياري في الأول (مثلاً «سداد قسط رقم 1») ليظهر في بروفايل العميل.
+      const note = `${label ? label + ' — ' : ''}سداد أجل للفاتورة رقم #${invoiceId}${invoice.notes ? ` | الوصف: ${invoice.notes}` : ''} | المديونية قبل: ${debtBefore.toFixed(2)} | المتبقي: ${remainingDebt.toFixed(2)}${discount > 0 ? ` | خصم/إكرامية: ${discount.toFixed(2)}` : ''}`;
 
       const splits = getSplits(splitPayments, paymentMethod, amount);
       const paymentOrder = {
@@ -2173,7 +2176,9 @@ export const useStore = create<CashierStore>((set, get) => ({
     const amount = Number(inst.amount) || 0;
     if (amount <= 0) return false;
 
-    const paymentId = await get().payInvoiceDebt(inst.order_id, inst.customer_id, amount, splitPayments, paymentMethod, 0);
+    const planInsts0 = state.installments.filter((i) => i.plan_id === inst.plan_id);
+    const seqLabel = `سداد قسط رقم ${inst.seq} من ${planInsts0.length}`;
+    const paymentId = await get().payInvoiceDebt(inst.order_id, inst.customer_id, amount, splitPayments, paymentMethod, 0, seqLabel);
     if (!paymentId) return false; // فشل السداد (رسالة الخطأ اتعرضت داخل payInvoiceDebt)
 
     try {
