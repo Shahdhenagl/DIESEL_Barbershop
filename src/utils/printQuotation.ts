@@ -3,6 +3,7 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas-pro';
 import { escapeHtml } from './escapeHtml';
 import { openPrintWindow } from './printWindow';
+import { waLink } from './waPhone';
 
 export interface QuotationPrintData {
   quotation_number: string;
@@ -174,10 +175,7 @@ export function quotationWhatsAppText(q: QuotationPrintData, settings: CompanyLi
 }
 
 export function sendQuotationWhatsApp(q: QuotationPrintData, settings: CompanyLike): void {
-  let phone = String(q.recipient_phone || '').replace(/\D/g, '');
-  if (!phone) { alert('لا يوجد رقم هاتف للعميل في هذا العرض.'); return; }
-  const code = settings.whatsappCountryCode || '2';
-  if (phone.startsWith('0')) phone = code + phone.substring(1);
-  else if (!phone.startsWith(code)) phone = code + phone;
-  window.open(`https://wa.me/${phone}?text=${encodeURIComponent(quotationWhatsAppText(q, settings))}`, '_blank');
+  const link = waLink(q.recipient_phone, quotationWhatsAppText(q, settings), settings.whatsappCountryCode || '20');
+  if (!link) { alert('رقم هاتف العميل غير صالح أو غير موجود في هذا العرض.'); return; }
+  window.open(link, '_blank');
 }

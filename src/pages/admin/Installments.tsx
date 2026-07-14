@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useStore } from '../../store/useStore';
 import { CalendarClock, AlertTriangle, Wallet, CheckCircle2, Clock, Plus, Receipt, MessageCircle, X } from 'lucide-react';
 import { activePaymentKeys, payLabelOf } from '../../utils/paymentMethods';
+import { waLink } from '../../utils/waPhone';
 
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
@@ -51,13 +52,9 @@ export default function Installments() {
   };
 
   const sendReminder = (inst: any, insts: any[], note = '') => {
-    const phone = custPhone(inst.customer_id);
-    if (!phone) { alert('لا يوجد رقم هاتف لهذا العميل.'); return; }
-    let clean = String(phone).replace(/\D/g, '');
-    const code = (storeSettings as any).whatsappCountryCode || '2';
-    if (clean.startsWith('0')) clean = code + clean.substring(1);
-    else if (!clean.startsWith(code)) clean = code + clean;
-    window.open(`https://wa.me/${clean}?text=${encodeURIComponent(buildReminderMsg(inst, insts, note))}`, '_blank');
+    const link = waLink(custPhone(inst.customer_id), buildReminderMsg(inst, insts, note), (storeSettings as any).whatsappCountryCode || '20');
+    if (!link) { alert('رقم هاتف العميل غير صالح أو غير موجود.'); return; }
+    window.open(link, '_blank');
   };
 
   // متأخّر → بوب أب ملاحظة (غرامة) قبل الإرسال؛ غير كده → إرسال مباشر.
