@@ -2509,6 +2509,12 @@ export default function POS() {
               )}
             </button>
             )}
+            <button onClick={() => setShowQuotationModal(true)} disabled={cart.length === 0} title="إنشاء عرض سعر من السلة (لا يخصم مخزون)" className="flex items-center justify-center gap-1.5 lg:gap-2 px-3 lg:px-5 h-[44px] lg:h-[52px] bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 hover:bg-purple-100 disabled:opacity-40 disabled:cursor-not-allowed rounded-2xl font-bold transition border border-purple-100 dark:border-purple-900/30 whitespace-nowrap shadow-sm shrink-0">
+              <FileText size={18} /> <span className="text-sm">عرض سعر</span>
+            </button>
+            <button onClick={openInstallmentModal} disabled={cart.length === 0} title="بيع بالتقسيط (مقدم + دفعات)" className="flex items-center justify-center gap-1.5 lg:gap-2 px-3 lg:px-5 h-[44px] lg:h-[52px] bg-teal-50 dark:bg-teal-900/20 text-teal-600 dark:text-teal-400 hover:bg-teal-100 disabled:opacity-40 disabled:cursor-not-allowed rounded-2xl font-bold transition border border-teal-100 dark:border-teal-900/30 whitespace-nowrap shadow-sm shrink-0">
+              <CreditCard size={18} /> <span className="text-sm">تقسيط</span>
+            </button>
           </div>
         </header>
 
@@ -2814,9 +2820,9 @@ export default function POS() {
         {/* Footer Checkout */}
         <div className="p-3 bg-white dark:bg-slate-800 border-t border-gray-100 dark:border-slate-700 shadow-2xl">
           {/* الكباتن المنفّذون — اختيار متعدد (العمولة تتقسّم بينهم بالتساوي) */}
-          <div className="mb-3" id="pos-salesperson">
-            <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1">👤 الكباتن المنفّذون (اختَر واحد أو أكثر — العمولة تتقسّم بينهم بالتساوي)</label>
-            <div className="flex flex-wrap gap-2 max-h-28 overflow-y-auto p-1">
+          <div className="mb-2" id="pos-salesperson">
+            <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1">👤 الكباتن المنفّذون (اختَر واحد أو أكثر)</label>
+            <div className="flex flex-wrap gap-2 max-h-[72px] overflow-y-auto p-0.5">
               {employees.length === 0 ? (
                 <span className="text-xs text-slate-400">لا يوجد موظفون — أضِفهم من قسم الموظفين.</span>
               ) : employees.map((emp) => {
@@ -2915,7 +2921,7 @@ export default function POS() {
               onClick={() => { setShouldPrint(false); setShowCheckoutModal(true); }}
               disabled={cart.length === 0 || pricesHidden}
               style={cart.length > 0 && !pricesHidden ? { background: storeSettings.themeColor } : {}}
-              className="flex-1 disabled:bg-gray-300 text-white py-4 rounded-2xl font-black flex flex-col items-center justify-center gap-1 transition-all text-sm active:scale-95 shadow-lg disabled:shadow-none group"
+              className="flex-1 disabled:bg-gray-300 text-white py-3 rounded-2xl font-black flex items-center justify-center gap-2 transition-all text-sm active:scale-95 shadow-lg disabled:shadow-none group"
             >
               <Banknote size={20} className="group-hover:scale-110 transition-transform" />
               <span>تحصيل ودفع</span>
@@ -2924,7 +2930,7 @@ export default function POS() {
               id="pos-checkout-print-btn"
               onClick={() => { setShouldPrint(true); setShowCheckoutModal(true); }}
               disabled={cart.length === 0 || pricesHidden}
-              className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-500 disabled:from-gray-300 disabled:to-gray-300 text-white py-4 rounded-2xl font-black flex flex-col items-center justify-center gap-1 transition-all text-sm active:scale-95 shadow-lg shadow-emerald-500/20 disabled:shadow-none group"
+              className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-500 disabled:from-gray-300 disabled:to-gray-300 text-white py-3 rounded-2xl font-black flex items-center justify-center gap-2 transition-all text-sm active:scale-95 shadow-lg shadow-emerald-500/20 disabled:shadow-none group"
             >
               <Printer size={20} className="group-hover:rotate-12 transition-transform" />
               <span>دفع وطباعة</span>
@@ -2939,21 +2945,7 @@ export default function POS() {
             <PauseCircle size={18} /> {holdBusy ? 'جاري الحفظ...' : 'حفظ كفاتورة معلقة'}
           </button>
           )}
-          <button
-            onClick={() => setShowQuotationModal(true)}
-            disabled={cart.length === 0}
-            className="w-full mt-2 bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 hover:bg-purple-100 disabled:opacity-40 disabled:cursor-not-allowed py-3 rounded-2xl font-black flex items-center justify-center gap-2 transition-all text-sm active:scale-95 border border-purple-100 dark:border-purple-900/30"
-          >
-            <FileText size={18} /> إنشاء عرض سعر (لا يخصم من المخزون)
-          </button>
-          <button
-            onClick={openInstallmentModal}
-            disabled={cart.length === 0 || pricesHidden}
-            className="w-full mt-2 bg-teal-50 dark:bg-teal-900/20 text-teal-600 dark:text-teal-400 hover:bg-teal-100 disabled:opacity-40 disabled:cursor-not-allowed py-3 rounded-2xl font-black flex items-center justify-center gap-2 transition-all text-sm active:scale-95 border border-teal-100 dark:border-teal-900/30"
-          >
-            <CreditCard size={18} /> بيع بالتقسيط (مقدم + دفعات)
-          </button>
-          <button onClick={clearCart} className="w-full text-slate-400 hover:text-red-500 text-xs font-bold py-3 transition-colors">
+          <button onClick={clearCart} className="w-full text-slate-400 hover:text-red-500 text-xs font-bold py-2.5 transition-colors">
             إلغاء الطلب والتفريغ
           </button>
         </div>
