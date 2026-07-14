@@ -2358,7 +2358,7 @@ export default function POS() {
       <div className={`flex-1 flex flex-col h-full pb-16 lg:pb-0 bg-white dark:bg-slate-900 shadow-2xl z-10 w-full lg:w-2/3 ${mobileView === 'cart' ? 'hidden lg:flex' : 'flex'}`}>
         <header className="flex flex-col p-3 md:p-5 gap-4 border-b border-gray-100 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md">
           {/* Top Row: Avatar (Right), Text (Center), Dark Mode (Left) */}
-          <div className="flex justify-between items-start w-full">
+          <div className="flex justify-between items-center w-full gap-3">
             {/* Right: Avatar and Message */}
             <div className="flex items-center gap-2 shrink-0">
               <div className="relative group cursor-pointer" onClick={() => { if (confirm('هل تريد تسجيل الخروج؟')) { logoutPOS(); navigate('/pos-login'); } }}>
@@ -2399,8 +2399,20 @@ export default function POS() {
               )}
             </div>
 
+            <div className="relative hidden lg:block flex-1 max-w-md">
+              <Search className="absolute right-4 top-3.5 text-gray-400" size={20} />
+              <input
+                type="text"
+                placeholder="ابحث باسم المنتج..."
+                style={{ '--tw-ring-color': storeSettings.themeColor + '40' } as any}
+                className="w-full h-[52px] bg-slate-100 dark:bg-slate-800 dark:text-white border-none rounded-2xl py-3.5 pr-12 pl-4 text-sm focus:outline-none focus:ring-2 shadow-inner transition"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+
             {/* Center: Text & Badges */}
-            <div className="flex flex-col items-center flex-1 px-2 text-center">
+            <div className="flex flex-col items-center shrink-0 px-2 text-center min-w-[150px]">
               <div className="flex flex-col md:flex-row items-center gap-2 mb-1">
                 <h1 className="text-xl font-black bg-clip-text text-transparent bg-gradient-to-l from-indigo-600 to-purple-600 dark:from-indigo-400 dark:to-purple-400 leading-tight">
                   أهلاً، {activeCashier?.name?.split(' ')[0] || 'المحاسب'}
@@ -2431,6 +2443,22 @@ export default function POS() {
               <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest leading-tight">{storeSettings.name}</span>
             </div>
 
+            <div className="relative hidden lg:block flex-1 max-w-md group">
+              <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-indigo-600 text-white text-[9px] font-black px-2 py-0.5 rounded-full z-10 shadow-sm opacity-0 group-focus-within:opacity-100 transition-opacity whitespace-nowrap">SCAN (Enter)</span>
+              <div className={`relative flex items-center border-2 rounded-2xl transition-colors bg-white dark:bg-slate-800 h-[52px] w-full ${scanStatus === 'success' ? 'border-emerald-500 ring-2 ring-emerald-200' : scanStatus === 'error' ? 'border-red-500 ring-2 ring-red-200' : 'border-indigo-200 dark:border-slate-700 focus-within:border-indigo-500 shadow-inner'}`}>
+                <ScanLine className={`absolute right-3 ${scanStatus === 'success' ? 'text-emerald-500' : scanStatus === 'error' ? 'text-red-500' : 'text-indigo-500'}`} size={18} />
+                <input
+                  type="text"
+                  dir="ltr"
+                  placeholder="قارئ الباركود"
+                  className="w-full bg-transparent border-none h-full pr-10 pl-3 text-sm focus:outline-none focus:ring-0 font-mono font-bold placeholder-indigo-300 dark:placeholder-slate-500 text-indigo-700 dark:text-indigo-400 text-center"
+                  value={barcodeInput}
+                  onChange={e => setBarcodeInput(e.target.value)}
+                  onKeyDown={handleBarcodeScan}
+                />
+              </div>
+            </div>
+
             {/* Left: Dark Mode Toggle */}
             <button onClick={toggleTheme} className="p-3 lg:p-3.5 rounded-2xl bg-slate-100 dark:bg-slate-800 text-gray-600 dark:text-gray-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-gray-200 dark:border-slate-700 transition shadow-sm shrink-0">
               {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
@@ -2449,7 +2477,7 @@ export default function POS() {
             </button>
 
             {/* Center: Barcode Scanner & Search */}
-            <div className="flex-1 flex gap-2 lg:gap-4 justify-center max-w-2xl">
+            <div className="flex-1 flex gap-2 lg:gap-4 justify-center max-w-2xl lg:hidden">
               <div className="relative w-full group flex-1">
                  <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-indigo-600 text-white text-[9px] font-black px-2 py-0.5 rounded-full z-10 shadow-sm opacity-0 group-focus-within:opacity-100 transition-opacity whitespace-nowrap">SCAN (Enter)</span>
                  <div className={`relative flex items-center border-2 rounded-2xl transition-colors bg-white dark:bg-slate-800 h-[44px] lg:h-[52px] w-full ${scanStatus === 'success' ? 'border-emerald-500 ring-2 ring-emerald-200' : scanStatus === 'error' ? 'border-red-500 ring-2 ring-red-200' : 'border-indigo-200 dark:border-slate-700 focus-within:border-indigo-500 shadow-inner'}`}>
