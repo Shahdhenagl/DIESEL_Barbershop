@@ -8,6 +8,17 @@ export default function Quotations() {
   const { quotations, deleteQuotation, storeSettings } = useStore();
   const cur = storeSettings.currency;
   const [q, setQ] = useState('');
+  const [sendingId, setSendingId] = useState<string | null>(null);
+
+  const sendWhatsApp = async (x: any) => {
+    if (sendingId) return;
+    setSendingId(x.id);
+    try {
+      await sendQuotationWhatsApp(x as any, storeSettings as any);
+    } finally {
+      setSendingId(null);
+    }
+  };
 
   const list = useMemo(() => {
     const term = normalizeArabic(q.trim());
@@ -73,12 +84,12 @@ export default function Quotations() {
               </div>
               <div className="p-3 border-t border-slate-100 dark:border-slate-700 space-y-2">
                 <button
-                  onClick={() => sendQuotationWhatsApp(x as any, storeSettings as any)}
-                  disabled={!x.recipient_phone}
+                  onClick={() => sendWhatsApp(x)}
+                  disabled={!x.recipient_phone || sendingId === x.id}
                   className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black py-2.5 rounded-xl flex items-center justify-center gap-2 text-sm"
-                  title={x.recipient_phone ? 'إرسال العرض للعميل على واتساب' : 'لا يوجد رقم هاتف للعميل'}
+                  title={x.recipient_phone ? 'إرسال العرض (PDF) للعميل على واتساب' : 'لا يوجد رقم هاتف للعميل'}
                 >
-                  <MessageCircle size={16} /> إرسال / تواصل واتساب
+                  <MessageCircle size={16} /> {sendingId === x.id ? 'جارٍ تجهيز الـ PDF…' : 'إرسال / تواصل واتساب'}
                 </button>
                 <div className="flex gap-2">
                   <button onClick={() => reprint(x)} className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 rounded-xl flex items-center justify-center gap-1.5 text-sm"><Printer size={15} /> طباعة</button>

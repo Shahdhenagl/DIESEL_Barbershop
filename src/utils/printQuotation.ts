@@ -4,6 +4,7 @@ import html2canvas from 'html2canvas-pro';
 import { escapeHtml } from './escapeHtml';
 import { openPrintWindow } from './printWindow';
 import { waLink } from './waPhone';
+import { supabase } from '../lib/supabase';
 
 export interface QuotationPrintData {
   quotation_number: string;
@@ -130,8 +131,8 @@ export async function printQuotation(q: QuotationPrintData, settings: CompanyLik
   openPrintWindow(html, 'width=900,height=1200');
 }
 
-// تصدير PDF مقاس A4.
-export async function quotationToPdf(q: QuotationPrintData, settings: CompanyLike): Promise<void> {
+// يبني ملف الـ PDF (مقاس A4) في الذاكرة ويعيد كائن jsPDF — يُعاد استخدامه للتنزيل والرفع.
+async function buildQuotationPdf(q: QuotationPrintData, settings: CompanyLike): Promise<jsPDF> {
   const qr = await qrDataUrl(qrTextOf(q, settings));
   const holder = document.createElement('div');
   holder.style.cssText = 'position:fixed; right:-10000px; top:0; width:210mm; background:#fff; z-index:-1;';
@@ -151,17 +152,49 @@ export async function quotationToPdf(q: QuotationPrintData, settings: CompanyLik
     pdf.addImage(img, 'JPEG', 0, pos, pw, ih);
     left -= ph;
     while (left > 0) { pos -= ph; pdf.addPage(); pdf.addImage(img, 'JPEG', 0, pos, pw, ih); left -= ph; }
-    pdf.save(`عرض-سعر-${q.quotation_number}.pdf`);
-  } catch (e) {
-    console.error('quotationToPdf error:', e);
-    alert('تعذّر إنشاء PDF، جرّبي زر الطباعة ثم «حفظ كـ PDF».');
+    return pdf;
   } finally {
     holder.remove();
   }
 }
 
+// تصدير PDF مقاس A4 (تنزيل على الجهاز).
+export async function quotationToPdf(q: QuotationPrintData, settings: CompanyLike): Promise<void> {
+  try {
+    const pdf = await buildQuotationPdf(q, settings);
+    pdf.save(`عرض-سعر-${q.quotation_number}.pdf`);
+  } catch (e) {
+    console.error('quotationToPdf error:', e);
+    alert('تعذّر إنشاء PDF، جرّبي زر الطباعة ثم «حفظ كـ PDF».');
+  }
+}
+
+// اسم الـ bucket العام في Supabase Storage الذي تُرفع إليه ملفات عروض الأسعار.
+const QUOTATIONS_BUCKET = 'quotations';
+
+// يرفع الـ PDF إلى Supabase Storage ويعيد رابط التحميل العام (أو null لو فشل الرفع).
+export async function uploadQuotationPdf(q: QuotationPrintData, settings: CompanyLike): Promise<string | null> {
+  try {
+    const pdf = await buildQuotationPdf(q, settings);
+    const blob = pdf.output('blob') as Blob;
+    // مفتاح آمن (حروف/أرقام فقط) لتفادي مشاكل الترميز في مسار التخزين.
+    const safeNum = String(q.quotation_number || 'quote').replace(/[^\w-]+/g, '-');
+    const path = `${safeNum}.pdf`;
+    const { error } = await supabase.storage
+      .from(QUOTATIONS_BUCKET)
+      .upload(path, blob, { contentType: 'application/pdf', upsert: true });
+    if (error) { console.error('uploadQuotationPdf error:', error); return null; }
+    const { data } = supabase.storage.from(QUOTATIONS_BUCKET).getPublicUrl(path);
+    return data?.publicUrl || null;
+  } catch (e) {
+    console.error('uploadQuotationPdf exception:', e);
+    return null;
+  }
+}
+
 // نص واتساب (فاتورة إلكترونية) + فتح المحادثة مع العميل.
-export function quotationWhatsAppText(q: QuotationPrintData, settings: CompanyLike): string {
+// pdfUrl (اختياري): رابط تحميل ملف الـ PDF يُضاف في نهاية الرسالة.
+export function quotationWhatsAppText(q: QuotationPrintData, settings: CompanyLike, pdfUrl?: string | null): string {
   const cur = settings.currency || 'ج.م';
   const m = (n: number) => money(n, cur);
   const items = q.items.map((it) => `• ${it.name} × ${it.quantity} = ${m(it.total)}`).join('\n');
@@ -171,11 +204,28 @@ export function quotationWhatsAppText(q: QuotationPrintData, settings: CompanyLi
     `\n*الأصناف:*\n${items}\n\n*الإجمالي: ${m(q.total)}*` +
     (q.execution_period ? `\nمدة التنفيذ: ${q.execution_period}` : '') +
     (q.notes ? `\nملاحظات: ${q.notes}` : '') +
+    (pdfUrl ? `\n\n📄 *عرض السعر PDF:*\n${pdfUrl}` : '') +
     `\n\nفي انتظار ردكم، ونسعد بخدمتكم 🌟\n${settings.name || ''}${settings.phone ? ` — ${settings.phone}` : ''}`;
 }
 
-export function sendQuotationWhatsApp(q: QuotationPrintData, settings: CompanyLike): void {
-  const link = waLink(q.recipient_phone, quotationWhatsAppText(q, settings), settings.whatsappCountryCode || '20');
-  if (!link) { alert('رقم هاتف العميل غير صالح أو غير موجود في هذا العرض.'); return; }
-  window.open(link, '_blank');
+// يُنشئ الـ PDF ويرفعه على التخزين ثم يفتح واتساب العميل برسالة تحوي رابط تحميل الملف.
+// لو فشل الرفع، يرجع لإرسال الرسالة النصية فقط حتى لا تتعطّل العملية.
+export async function sendQuotationWhatsApp(q: QuotationPrintData, settings: CompanyLike): Promise<void> {
+  const cc = settings.whatsappCountryCode || '20';
+  // نتحقق من صلاحية الرقم أولاً قبل بذل مجهود إنشاء/رفع الـ PDF.
+  const preflight = waLink(q.recipient_phone, 'x', cc);
+  if (!preflight) { alert('رقم هاتف العميل غير صالح أو غير موجود في هذا العرض.'); return; }
+
+  // نفتح تبويباً فارغاً الآن (أثناء ضغطة المستخدم) لتفادي حظر النوافذ المنبثقة بعد الـ await.
+  const win = window.open('about:blank', '_blank');
+
+  const pdfUrl = await uploadQuotationPdf(q, settings);
+  if (!pdfUrl) {
+    // فشل الرفع (غالباً bucket «quotations» غير موجود) — نكمل بالنص فقط.
+    console.warn('WhatsApp: PDF upload failed, sending text only.');
+  }
+  const link = waLink(q.recipient_phone, quotationWhatsAppText(q, settings, pdfUrl), cc);
+  if (!link) { if (win) win.close(); alert('رقم هاتف العميل غير صالح أو غير موجود في هذا العرض.'); return; }
+  if (win) win.location.href = link;   // إعادة توجيه التبويب المفتوح مسبقاً
+  else window.open(link, '_blank');     // احتياطي لو تعذّر فتح التبويب المسبق
 }
