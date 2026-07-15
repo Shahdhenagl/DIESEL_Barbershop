@@ -4,13 +4,14 @@ import { useStore, type Employee, type EmployeeTransaction, type EmployeeLeave }
 import {
   Users, Plus, Trash2, Edit3, Search, X,
   Wallet, Landmark, CreditCard, Zap, Phone,
-  DollarSign, Briefcase, ArrowRight, FileText, CalendarDays, Gift, UserCheck, UserX, Download
+  DollarSign, Briefcase, ArrowRight, FileText, CalendarDays, Gift, UserCheck, UserX, Download,
+  ShieldCheck, Clock, LogIn, LogOut
 } from 'lucide-react';
 import { activePaymentKeys, payLabelOf, primaryMethod as primaryMethod_ } from '../../utils/paymentMethods';
 
 export default function Employees() {
   const {
-    employees, employeeTransactions, employeeLeaves, storeSettings, orders, cashiers,
+    employees, employeeTransactions, employeeLeaves, attendance, storeSettings, orders, cashiers,
     addEmployee, updateEmployee, addEmployeeTransaction,
     updateEmployeeTransaction, deleteEmployeeTransaction,
     addEmployeeLeave, updateEmployeeLeave, deleteEmployeeLeave
@@ -75,7 +76,8 @@ export default function Employees() {
     monthly_salary: '',
     annual_leave_balance: '',
     hire_date: new Date().toISOString().slice(0, 10),
-    is_active: true
+    is_active: true,
+    attendance_pin: ''
   });
 
   const [transFormData, setTransFormData] = useState<Record<string, string>>({
@@ -300,6 +302,57 @@ export default function Employees() {
 
   const profileLeaveBalance = profileEmployee ? getLeaveBalanceStats(profileEmployee) : null;
 
+  // سجل الحضور والانصراف يوماً بيوم؛ الأيام بدون تسجيل تُعرض «غائب»
+  // (وإن كان في إجازة معتمدة تُعرض «إجازة» بدل الغياب).
+  const profileAttendance = useMemo(() => {
+    if (!profileEmployee) return { days: [] as any[], present: 0, absent: 0, leave: 0 };
+    const todayStr = formatDateInput(new Date());
+    const hireStr = profileEmployee.hire_date || profileEmployee.created_at?.slice(0, 10) || '2000-01-01';
+
+    let start: string, end: string;
+    if (profileTimeFilter === 'week') {
+      const s = new Date(); s.setDate(s.getDate() - 6);
+      start = formatDateInput(s); end = todayStr;
+    } else if (profileTimeFilter === 'month') {
+      start = `${todayStr.slice(0, 7)}-01`; end = todayStr;
+    } else if (profileTimeFilter === 'custom_month') {
+      const [y, m] = profileCustomMonth.split('-').map(Number);
+      const last = new Date(y, m, 0).getDate();
+      start = `${profileCustomMonth}-01`;
+      end = `${profileCustomMonth}-${String(last).padStart(2, '0')}`;
+    } else if (profileTimeFilter === 'custom_year') {
+      start = `${profileCustomYear}-01-01`; end = `${profileCustomYear}-12-31`;
+    } else { // all
+      start = hireStr; end = todayStr;
+    }
+    if (start < hireStr) start = hireStr;
+    if (end > todayStr) end = todayStr;
+
+    const rows = attendance.filter(a => a.employee_id === profileEmployee.id);
+    const rowByDate = new Map(rows.map(r => [r.work_date, r]));
+    const leaves = employeeLeaves.filter(l => l.employee_id === profileEmployee.id);
+    const isLeaveDay = (d: string) => leaves.some(l => d >= l.start_date && d <= l.end_date);
+
+    const days: any[] = [];
+    let present = 0, absent = 0, leave = 0;
+    let cursor = new Date(`${start}T00:00:00`);
+    const endDate = new Date(`${end}T00:00:00`);
+    let guard = 0;
+    while (cursor <= endDate && guard < 400) {
+      guard++;
+      const d = formatDateInput(cursor);
+      const row = rowByDate.get(d);
+      let status: 'present' | 'absent' | 'leave';
+      if (row && row.check_in) { status = 'present'; present++; }
+      else if (isLeaveDay(d)) { status = 'leave'; leave++; }
+      else { status = 'absent'; absent++; }
+      days.push({ date: d, check_in: row?.check_in || null, check_out: row?.check_out || null, status });
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    days.reverse(); // الأحدث أولاً
+    return { days, present, absent, leave };
+  }, [profileEmployee, attendance, employeeLeaves, profileTimeFilter, profileCustomMonth, profileCustomYear]);
+
   // --- Handlers ---
   const handleOpenEmpModal = (emp: Employee | null = null) => {
     if (emp) {
@@ -312,11 +365,12 @@ export default function Employees() {
         monthly_salary: emp.monthly_salary.toString(),
         annual_leave_balance: (emp.annual_leave_balance || 0).toString(),
         hire_date: emp.hire_date || emp.created_at?.slice(0, 10) || today,
-        is_active: emp.is_active ?? true
+        is_active: emp.is_active ?? true,
+        attendance_pin: emp.attendance_pin || ''
       });
     } else {
       setEditingEmployee(null);
-      setEmpFormData({ name: '', phone: '', job_title: '', working_hours: '', monthly_salary: '', annual_leave_balance: '', hire_date: today, is_active: true });
+      setEmpFormData({ name: '', phone: '', job_title: '', working_hours: '', monthly_salary: '', annual_leave_balance: '', hire_date: today, is_active: true, attendance_pin: '' });
     }
     setShowEmpModal(true);
   };
@@ -332,7 +386,8 @@ export default function Employees() {
       monthly_salary: parseFloat(empFormData.monthly_salary) || 0,
       annual_leave_balance: parseFloat(empFormData.annual_leave_balance) || 0,
       hire_date: empFormData.hire_date || today,
-      is_active: empFormData.is_active
+      is_active: empFormData.is_active,
+      attendance_pin: empFormData.attendance_pin.trim() || null
     };
 
     if (editingEmployee) {
@@ -837,6 +892,68 @@ export default function Employees() {
               </table>
             </div>
           </div>
+
+          {/* سجل الحضور والانصراف */}
+          <div className="bg-white rounded-[32px] shadow-sm border border-slate-100 overflow-hidden">
+            <div className="p-6 border-b border-slate-100 flex flex-wrap gap-3 justify-between items-center bg-slate-50/50">
+              <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
+                <Clock size={20} className="text-indigo-500" />
+                سجل الحضور والانصراف
+              </h3>
+              <div className="flex items-center gap-2 text-xs font-black">
+                <span className="px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-100">حضور: {profileAttendance.present}</span>
+                <span className="px-3 py-1.5 rounded-lg bg-sky-50 text-sky-600 border border-sky-100">إجازة: {profileAttendance.leave}</span>
+                <span className="px-3 py-1.5 rounded-lg bg-red-50 text-red-600 border border-red-100">غياب: {profileAttendance.absent}</span>
+              </div>
+            </div>
+            <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
+              <table className="w-full text-right">
+                <thead className="sticky top-0 bg-white z-10">
+                  <tr className="bg-white text-slate-400 text-[10px] font-black uppercase tracking-widest border-b border-slate-100">
+                    <th className="p-5">اليوم</th>
+                    <th className="p-5">التاريخ</th>
+                    <th className="p-5">الحضور</th>
+                    <th className="p-5">الانصراف</th>
+                    <th className="p-5 text-left">الحالة</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {profileAttendance.days.map((d) => {
+                    const dayName = new Date(`${d.date}T00:00:00`).toLocaleDateString('ar-EG', { weekday: 'long' });
+                    const fmt = (v: string | null) => v
+                      ? new Date(v).toLocaleTimeString('ar-EG', { timeZone: 'Africa/Cairo', hour: '2-digit', minute: '2-digit' })
+                      : '—';
+                    return (
+                      <tr key={d.date} className="hover:bg-slate-50/50 transition-colors">
+                        <td className="p-5 text-slate-500 font-bold">{dayName}</td>
+                        <td className="p-5 text-slate-400 text-xs font-bold tabular-nums">{d.date}</td>
+                        <td className="p-5 font-black tabular-nums text-emerald-600 flex items-center gap-1.5">
+                          {d.check_in && <LogIn size={14} className="text-emerald-400" />}{fmt(d.check_in)}
+                        </td>
+                        <td className="p-5 font-black tabular-nums text-rose-600">
+                          <span className="flex items-center gap-1.5">{d.check_out && <LogOut size={14} className="text-rose-400" />}{fmt(d.check_out)}</span>
+                        </td>
+                        <td className="p-5 text-left">
+                          <span className={`px-2.5 py-1 rounded-lg font-black text-[10px] border ${
+                            d.status === 'present' ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
+                            : d.status === 'leave' ? 'bg-sky-50 text-sky-600 border-sky-100'
+                            : 'bg-red-50 text-red-600 border-red-100'
+                          }`}>
+                            {d.status === 'present' ? 'حاضر' : d.status === 'leave' ? 'إجازة' : 'غائب'}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {profileAttendance.days.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="py-12 text-center text-slate-400 font-bold">لا توجد أيام في هذه الفترة</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       ) : (
         <>
@@ -1096,13 +1213,28 @@ export default function Employees() {
               </div>
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-2">الراتب الشهري</label>
-                <input 
+                <input
                   type="number"
                   className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 focus:ring-2 focus:ring-indigo-500/20 outline-none font-black text-xl"
                   value={empFormData.monthly_salary}
                   onChange={e => setEmpFormData({...empFormData, monthly_salary: e.target.value})}
                   placeholder="0.00"
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-1.5">
+                  <ShieldCheck size={16} className="text-indigo-500" /> الرقم السري لتسجيل الحضور
+                </label>
+                <input
+                  type="text"
+                  dir="ltr"
+                  inputMode="numeric"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 focus:ring-2 focus:ring-indigo-500/20 outline-none font-black text-center text-xl tracking-widest"
+                  value={empFormData.attendance_pin}
+                  onChange={e => setEmpFormData({...empFormData, attendance_pin: e.target.value})}
+                  placeholder="مثال: 1234"
+                />
+                <p className="text-[11px] font-bold text-slate-400 mt-1.5">يستخدمه الموظف في صفحة تسجيل الحضور <span className="font-mono text-indigo-500">/attendance</span> — اتركه فارغاً لتعطيل التسجيل له.</p>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>

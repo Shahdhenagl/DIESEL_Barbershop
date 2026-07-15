@@ -324,6 +324,16 @@ export interface Employee {
   created_at: string;
   cashier_id?: string; // ربط الموظف بحساب الكاشير
   commission_rate?: number; // نسبة عمولة المبيعات % (للمحاسبين)
+  attendance_pin?: string | null; // الرقم السري لتسجيل الحضور من صفحة /attendance
+}
+
+export interface Attendance {
+  id: string;
+  employee_id: string;
+  work_date: string; // YYYY-MM-DD
+  check_in: string | null;
+  check_out: string | null;
+  created_at: string;
 }
 
 export interface EmployeeTransaction {
@@ -487,6 +497,7 @@ interface CashierStore {
   employees: Employee[];
   employeeTransactions: EmployeeTransaction[];
   employeeLeaves: EmployeeLeave[];
+  attendance: Attendance[];
   productSuggestions: ProductSuggestion[];
   cashierNotes: CashierNote[];
   carSubscriptions: CarSubscription[];
@@ -872,6 +883,7 @@ export const useStore = create<CashierStore>((set, get) => ({
   employees: [],
   employeeTransactions: [],
   employeeLeaves: [],
+  attendance: [],
   productSuggestions: [],
   cashierNotes: [],
   coupons: [],
@@ -1021,7 +1033,7 @@ export const useStore = create<CashierStore>((set, get) => ({
     // right after login). Used by login()/loginPOS().
     if (!silent) set({ isLoading: true, dbError: null });
     try {
-      const [settingsRes, categoriesRes, productsRes, customersRes, ordersRes, counterRes, cashiersRes, employeesRes, employeeTransactionsRes, employeeLeavesRes] =
+      const [settingsRes, categoriesRes, productsRes, customersRes, ordersRes, counterRes, cashiersRes, employeesRes, employeeTransactionsRes, employeeLeavesRes, attendanceRes] =
         await Promise.all([
           supabase.from('store_settings').select('*').limit(1).maybeSingle(),
           supabase.from('categories').select('*').order('name'),
@@ -1037,6 +1049,7 @@ export const useStore = create<CashierStore>((set, get) => ({
           supabase.from('employees').select('*').order('created_at', { ascending: false }),
           supabase.from('employee_transactions').select('*').order('created_at', { ascending: false }),
           supabase.from('employee_leaves').select('*').order('created_at', { ascending: false }),
+          supabase.from('attendance').select('*').order('work_date', { ascending: false }),
         ]);
 
       const settings = settingsRes.data ? mapSettings(settingsRes.data as Record<string, unknown>) : get().storeSettings;
@@ -1133,6 +1146,7 @@ export const useStore = create<CashierStore>((set, get) => ({
         employees: (employeesRes.data ?? []) as Employee[],
         employeeTransactions: (employeeTransactionsRes.data ?? []) as EmployeeTransaction[],
         employeeLeaves: (employeeLeavesRes.data ?? []) as EmployeeLeave[],
+        attendance: (attendanceRes.error ? [] : (attendanceRes.data ?? [])) as Attendance[],
       });
 
       // الأقساط: تحميل منفصل (لا يكسر loadAll لو الجدول لسه مش موجود قبل migration db/27)
